@@ -1,0 +1,12 @@
+{
+    "configuration": {
+        "valid": {
+            "header" :"Valid configurations",
+            "body": "All task configurations saved."
+        },
+        "invalid": {
+            "header" :"Invalid configurations",
+            "body": "At least one of the configurations you specified is invalid. Please check the following error messages: "
+        }
+    }
+}

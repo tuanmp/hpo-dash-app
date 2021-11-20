@@ -35,9 +35,11 @@ class JobConfig:
         self._checkPointToSave = ""
         self._checkPointToLoad = ""  #
         self._checkPointInterval = 5
-        self._site = siteOptions[:1]
+        self._sites = siteOptions[:1]
         self._customOutDS = ""
         self._uuid = str(MiscUtils.wrappedUuidGen()).upper()
+        self._siteOptions = siteOptions
+        self._searchAlgOptions = searchAlgorithmOptions
         pass
 
     @property
@@ -78,7 +80,7 @@ class JobConfig:
 
     @maxPoints.setter
     def maxPoints(self, n):
-        if isinstance(n, int) and n > 0 and n <= self.maxEvaluationJobs:
+        if isinstance(n, int) and n > 0:
             self._maxPoints = n
         else:
             raise ValueError("{} is an invalid value of maxPoints".format(n))
@@ -93,7 +95,7 @@ class JobConfig:
             self._maxEvaluationJobs = n
         else:
             raise ValueError(
-                "{} is an invalid value of maxEvaluationJobs".format(n))
+                "{} is an invalid value of Max Evaluation Jobs. It must be positive and larger than Max Points.".format(n))
 
     @property
     def nPointsPerIteration(self):
@@ -113,7 +115,7 @@ class JobConfig:
 
     @minUnevaluatedPoints.setter
     def minUnevaluatedPoints(self, n):
-        if isinstance(n, int) and n >= 0:
+        if isinstance(n, int) and n >= 0 and n < self.nPointsPerIteration:
             self._minUnevaluatedPoints = n
         else:
             raise ValueError(
@@ -169,7 +171,7 @@ class JobConfig:
             self._evaluationExec = t
         else:
             raise ValueError(
-                "{} is an invalid value of evaluationExec".format(t))
+                "The evaluation execution must not be empty; you must tell the evaluation container to do something when it starts.".format(t))
 
     @property
     def evaluationInput(self):
@@ -290,15 +292,14 @@ class JobConfig:
                 "{} is an invalid value of checkPointInterval".format(n))
 
     @property
-    def site(self):
-        return self._site
-
-    @site.setter
-    def site(self, s):
-        if isinstance(s, list) and all([(site in siteOptions) for site in s]):
-            self._site = s
+    def sites(self):
+        return self._sites
+    @sites.setter
+    def sites(self, s):
+        if isinstance(s, list) and len(s) > 0 and all([(site in siteOptions) for site in s]):
+            self._sites = s
         else:
-            raise TypeError("site must be a list")
+            raise TypeError("The list of grid sites must not be empty.")
 
     def to_json(self, name=None):
         config = self.to_dict()

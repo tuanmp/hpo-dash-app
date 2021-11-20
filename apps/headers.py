@@ -25,7 +25,14 @@ def header(app_title="PANDA Hyperparameter Optimization"):
                 className="header-link",
                 children=html.A( 
                     children="Submission",
-                    href='/_submission'
+                    href='/submission'
+                )
+            ),
+            html.Div(
+                className="header-link",
+                children=html.A( 
+                    children="Development",
+                    href='/develop'
                 )
             )
         ]

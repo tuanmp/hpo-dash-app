@@ -1,10 +1,12 @@
 import os
+os.environ['PANDA_AUTH']='oidc'
+os.environ['PANDA_AUTH_VO']='atlas'
 from apps.headers import header
 import dash
 from dash import dcc
 from dash import html
+from dash import dash_table
 from dash import callback_context
-import dash_table
 import pandas as pd
 from dash.dependencies import Input, Output, State, MATCH
 import plotly.express as px
@@ -12,10 +14,13 @@ import plotly.express as px
 from apps.submission import submission
 from apps.monitor import monitor
 from apps.homepage import homepage
+from apps.develop import develop
 from apps.footer import footer
 import dash_bootstrap_components as dbc
 from apps.components.TaskRetriever import Retriever
+from apps.components.JobConfigurations import JobConfig
 import time
+import json
 
 external_stylesheets = [dbc.themes.BOOTSTRAP]
 
@@ -37,6 +42,17 @@ app.layout = html.Div([
     footer()
 ], style={'height': "100vh"})
 
+job_config = JobConfig()
+with open('apps/messages.json') as f:
+	messages = json.load(f)
+
+def check_set(att, value, obj):
+    try:
+        setattr(obj, att, value)
+        return True, None
+    except Exception as e:
+        return False, e
+
 @app.callback(
     Output('app-page-content', 'children'),
     Input('url', 'hash'),
@@ -48,9 +64,11 @@ def navigate(hash, pathname, page_content):
     if pathname=='/home':
         return homepage()   
     elif pathname=='/submission':
-        return submission()
+        return submission(config=job_config)
     elif pathname=='/monitor':
         return monitor()
+    elif pathname=='/develop':
+        return develop()
     return homepage()
 
 @app.callback(
@@ -215,6 +233,67 @@ def make_plots(plots):
 		except:
 			continue
 	return output
+
+### Callbacks for submission
+@app.callback(
+	Output('submission-tabs', 'value'),
+	Input({'type': 'back-button', 'index': '2'}, 'n_clicks'),
+	Input({'type': 'back-button', 'index': '3'}, 'n_clicks'),
+	Input({'type': 'back-button', 'index': '4'}, 'n_clicks'),
+	Input({'type': 'next-button', 'index': '1'}, 'n_clicks'),
+	Input({'type': 'next-button', 'index': '2'}, 'n_clicks'),
+	Input({'type': 'next-button', 'index': '3'}, 'n_clicks'),
+	prevent_initial_call=True
+)
+def switch_tab(nb2,nb3,nb4, nn1, nn2, nn3):
+	trigger = json.loads(callback_context.triggered[0]['prop_id'].replace('.n_clicks', ''))
+	current_tab = int(trigger['index'])
+	button_type = trigger['type']
+	if button_type == 'back-button':
+		return str(current_tab - 1)
+	else:
+		return str(current_tab + 1)
+
+@app.callback(
+	Output("configuration-alert", 'is_open'),
+	Output("configuration-alert", 'header'),
+	Output("configuration-alert", 'children'),
+	Output("configuration-alert", 'icon'),
+	Input({'type': 'save-button', 'index':'3'}, 'n_clicks'),
+	State("nParallelEvaluations", 'value'),
+	State("maxPoints", 'value'),
+	State("maxEvaluationJobs", 'value'),
+	State("nPointsPerIteration", 'value'),
+	State("minUnevaluatedPoints", 'value'),
+	State("searchAlgorithm", 'value'),
+	State("sites", 'value'),
+	State("evaluationContainer", 'value'),
+	State("evaluationExec", 'value'),
+	State("evaluationInput", 'value'),
+	State("trainingDS", 'value'),
+	State("evaluationTrainingData", 'value'),
+	State("evaluationOutput", 'value'),
+	State("evaluationMetrics", 'value'),
+	State("customOutDS", 'id'),
+	prevent_initial_call=True
+)
+def save_config(*args):
+	print(callback_context.states_list)
+	error_messages = []
+	for state in callback_context.states_list:
+		n_errors = len(error_messages)
+		att = state.get('id')
+		value = state.get('value')
+		success, ret = check_set(att, value, job_config)
+		if not success:
+			error_messages.append( f'({n_errors+1}) ' + str(ret))
+	print(job_config.__dict__)
+	if len(error_messages) == 0:
+		return True, messages['configuration']['valid']['header'], messages['configuration']['valid']['body'], 'success'
+	else:
+		error_messages.insert(0, messages['configuration']['invalid']['body'])
+		return True, messages['configuration']['invalid']['header'], '\n'.join(error_messages), 'warning'
+
 
 if __name__ == '__main__':
     app.run_server(debug=True)

@@ -65,6 +65,12 @@
     margin-bottom: 30px;
 }
 
+.tab-content-half {
+    display: inline;
+    width: 50%;
+    margin-bottom: 30px;
+}
+
 .tab-content input {
     height: 45px;
     width: 50%;
@@ -81,10 +87,6 @@
 
 .bright-background {
     background: url("Rect\ Light.svg") ,linear-gradient(to top, rgb(232, 192 ,132) 0%, rgb(233, 154, 137) 100%);
-}
-
-.dashbio-loading {
-    display: inline-block;
 }
 
 .dash-default-spinner {

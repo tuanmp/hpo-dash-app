@@ -1,50 +1,46 @@
 from dash import html, dcc
+import dash_bootstrap_components as dbc
 import lorem
 
 def homepage(**kwargs):
     return html.Div(
             children=[
                 html.Div(
-                    className="content-container white-background", 
-                    children=[
+                    [
                         html.H1("About PANDA Hyperparameter Optimization"),
                         html.P(lorem.text()),
                         html.Div(
-                            className="centered-container",
-                            children=[
-                                html.A(className="button", children="Explore Submission Tool", href="#submission"),
-                                html.A(className="button", children="Explore Monitoring Tool", href="#monitoring"),
-                                ]   
-                            )
-                        ]
-                    ),
+                            [
+                                dbc.Button("Explore Submission Tool", href="#submission", color="primary", class_name='me-md-2', outline=True),
+                                dbc.Button("Explore Monitoring Tool", href="#monitoring", color="primary", class_name='me-md-2', outline=True),
+                            ],
+                            className="d-grid gap-2 d-md-flex justify-content-md-center"
+                        )
+                    ]
+                ),
                 html.Div(
-                    className="content-container polygon blue-background ", 
-                    id="submission",
-                    children=[
+                    [
                         html.H1("Task Submission"),
-                        html.P(lorem.paragraph()), 
+                        html.P(lorem.paragraph()),
                         html.Div(
-                            className="centered-container",
-                            children=[
-                                html.A(className="button", children="Go to Submission", href="/submission"),
-                                ]   
-                            )
-                        ]
-                    ),
+                            [
+                                dbc.Button("Go to Submission", href="/submission", color="primary", class_name='me-md-2', outline=True),
+                            ],
+                            className="d-grid gap-2 d-md-flex justify-content-md-center"
+                        )
+                    ]
+                ),
                 html.Div(
-                    className="content-container bright-background", 
-                    id="monitoring",
-                    children=[
+                    [
                         html.H1("Task Monitoring"),
                         html.P(lorem.paragraph()), 
                         html.Div(
-                            className="centered-container",
-                            children=[
-                                html.A(className="button", children="Go to Monitoring", href="/monitor"),
-                                ]   
-                            )
-                        ]
-                    )
-                ]
+                            [
+                                dbc.Button("Go to Monitoring", href="/monitor", color="primary", class_name='me-md-2', outline=True),
+                            ],
+                            className="d-grid gap-2 d-md-flex justify-content-md-center"
+                        )
+                    ]
+                )
+            ]
         )

@@ -5,7 +5,7 @@ import re
 
 import yaml
 from pandaclient import (Client, MiscUtils, PandaToolsPkgInfo, PLogger,
-						 PsubUtils, panda_jupyter)
+						 PsubUtils)
 
 from .JobConfigurations import JobConfig
 from .utils import taskAttributes
@@ -35,9 +35,9 @@ class Phpo:
 	def execStrTemplate(self):
 		return 'phpo'
 
-	def _setup(self):
-		panda_jupyter.setup()
-		return
+	# def _setup(self):
+	# 	panda_jupyter.setup()
+	# 	return
 
 	@property
 	def ExecStr(self):

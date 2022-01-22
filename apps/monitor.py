@@ -3,10 +3,19 @@ from dash import html, dcc
 from .components.TaskRetriever import Retriever
 
 def monitor(**kwargs):
-
+	transition_style={'transition': 'opacity 1000ms ease'}
+	SIDEBAR_STYLE = {
+		# "position": "fixed",
+		# "top": 0,
+		# "right": 0,
+		# "bottom": 0,
+		'height': '100vh',
+		# "width": "16rem",
+		"padding": "2rem rem",
+		"background-color": "#f8f9fa",
+	}
 	query_by_id = html.Div(
-		className = "tab-content",
-		children=[
+		[
 			html.Div(className="label", children="Task ID(s): "),
 			dcc.Input(
 				className="input-element", 
@@ -16,8 +25,7 @@ def monitor(**kwargs):
 	)
 
 	query_by_user = html.Div(
-		className = "tab-content",
-		children=[
+		[
 			html.Div([
 				html.Div(className="label", children="Username: "),
 				dcc.Input(
@@ -46,27 +54,29 @@ def monitor(**kwargs):
 		]
 	)
 
-	tab1_content = html.Div(
-		className='tab-content-container',
-        children=[
+	tab1_content = dcc.Tab(
+        [
             query_by_id,
-            dcc.Loading(children=html.Button("Search", id= "taskID-search-button"), fullscreen=True),
-        ]
+            dcc.Loading(children=dbc.Button("Search", id= "taskID-search-button"), fullscreen=True),
+        ],
+		id='query-by-id',
+		label='Search by JEDI task ID'
 	)
 
-	tab2_content = html.Div(
+	tab2_content = dcc.Tab(
 		className='tab-content-container',
         children=[
             query_by_user,
-            dcc.Loading(children=html.Button("Search", id="criteria-search-button"), fullscreen=True),
-        ]
+            dcc.Loading(children=dbc.Button("Search", id="criteria-search-button"), fullscreen=True),
+        ],
+		id='query-by-user',
+		label='Advanced Search'
 	)
 
-	tabs = dbc.Tabs(
-		className="tabs",
-		children=[
-			dbc.Tab(tab1_content, label="Search by ID"),
-			dbc.Tab(tab2_content, label="Advanced search"),
+	tabs = dcc.Tabs(
+		[
+			tab1_content,
+			tab2_content,
 		]
 	)
 
@@ -94,32 +104,32 @@ def monitor(**kwargs):
 		hidden=True
 	)
 
-	alert_taskID_search = dbc.Modal(
+	alert_taskID_search = dbc.Offcanvas(
 		children=[
 			dbc.ModalHeader(id="taskID-search-alert-header"),
 			dbc.ModalBody(id="taskID-search-alert-body")
 		],
-		id="taskID-search-alert", is_open=False, keyboard=True, size="lg"
+		id="taskID-search-alert", is_open=False, keyboard=True
 	)
 
-	alert_job_detail = dbc.Modal(
+	alert_job_detail = dbc.Offcanvas(
 		children=[
 			dbc.ModalHeader(id="job-detail-alert-header", style={'color': "black"}),
 			dbc.ModalBody(id="job-detail-alert-body"), 
 			html.Div(hidden=True, children=[], id="hidden-dropdown-value"),
 		],
-		id="job-detail-alert", is_open=False, keyboard=True, size="lg"
+		id="job-detail-alert", is_open=False, keyboard=True
 	)
 
-	query = html.Div(
-		className="content-container bright-background",
-		children=[
+	query = dbc.Container(
+		[
 			tabs,
 			result,
 			detail,
 			alert_job_detail,
 			alert_taskID_search
-		]
+		],
+		style={'padding': '30px 20px'}
 	)
 	
 	return query

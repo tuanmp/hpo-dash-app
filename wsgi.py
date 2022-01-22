@@ -11,16 +11,20 @@ import pandas as pd
 from dash.dependencies import Input, Output, State, MATCH
 import plotly.express as px
 
-from apps.submission import submission
+from apps.submission import submission, render_job_config
 from apps.monitor import monitor
 from apps.homepage import homepage
 from apps.develop import develop
 from apps.footer import footer
+from apps.components.utils import check_set
 import dash_bootstrap_components as dbc
 from apps.components.TaskRetriever import Retriever
-from apps.components.JobConfigurations import JobConfig
+from apps.components.SearchSpace import Hyperparameter
+from apps.components.Phpo import Phpo 
+from apps.components.utils import get_index, getMethod
 import time
-import json
+import json, yaml, base64
+import re
 
 external_stylesheets = [dbc.themes.BOOTSTRAP]
 
@@ -29,54 +33,62 @@ app.title='hpogui'
 
 application = app.server
 
-app.layout = html.Div([
-    dcc.Location(id='url', refresh=False),
-    html.Link(href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.0.3/css/font-awesome.css", rel="stylesheet"),
-    html.Link(href="https://codepen.io/rmarren1/pen/mLqGRg.css", rel="stylesheet"),
-    header(),
-    html.Div(
-        id='app-page-content',
-        children=[
-        ]
-    ),
-    footer()
-], style={'height': "100vh"})
+app.layout = html.Div(
+	[
+		dcc.Location(id='url', refresh=False),
+		html.Link(href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.0.3/css/font-awesome.css", rel="stylesheet"),
+		# html.Link(href="https://codepen.io/rmarren1/pen/mLqGRg.css", rel="stylesheet"),
+		header(),
+		html.Div(
+			id='app-page-content',
+			children=[]
+		),
+		footer()
+	], style={'height': "100vh"})
 
-job_config = JobConfig()
+task=Phpo()
+job_config = task.JobConfig
+hyperparameters = {}
+search_space = task.HyperParameters
+index=len(hyperparameters)+len(search_space)
+info = ' (marked for removal)'
 with open('apps/messages.json') as f:
 	messages = json.load(f)
 
-def check_set(att, value, obj):
-    try:
-        setattr(obj, att, value)
-        return True, None
-    except Exception as e:
-        return False, e
-
 @app.callback(
-    Output('app-page-content', 'children'),
-    Input('url', 'hash'),
-    Input('url', 'pathname'),
-    State('app-page-content', 'children'),
+	Output('app-page-content', 'children'),
+	Input('url', 'hash'),
+	Input('url', 'pathname'),
+	State('app-page-content', 'children'),
 )
 def navigate(hash, pathname, page_content):
-    print(pathname)
-    if pathname=='/home':
-        return homepage()   
-    elif pathname=='/submission':
-        return submission(config=job_config)
-    elif pathname=='/monitor':
-        return monitor()
-    elif pathname=='/develop':
-        return develop()
-    return homepage()
+	print(pathname)
+	if pathname=='/home':
+		return homepage()   
+	elif pathname=='/submission':
+		global task
+		task=Phpo()
+		global hyperparameters
+		hyperparameters={}
+		global search_space
+		search_space=task.HyperParameters
+		global index
+		index=len(hyperparameters)+len(search_space)
+		if len(hyperparameters)==0:
+			hyperparameters[0]=Hyperparameter(index=0)
+		return submission(config=job_config, hyperparameters=hyperparameters, search_space=search_space)
+	elif pathname=='/monitor':
+		return monitor()
+	elif pathname=='/develop':
+		return develop()
+	return homepage()
 
 @app.callback(
 	Output("taskID-search-alert-header", "children"),
 	Output("taskID-search-alert-body", "children"),
 	Output("taskID-search-alert", "is_open"),
  	Output("taskID-search-result", "children"),
-    Output("taskID-search-button", "children"),
+	Output("taskID-search-button", "children"),
 	Output("criteria-search-button", "children"),
 	Output("search-result-container", "hidden"),
 	Input("taskID-search-button", "n_clicks"),
@@ -85,7 +97,7 @@ def navigate(hash, pathname, page_content):
 	State("criteria-username", "value"),
 	State("criteria-age", "value"),
 	State("criteria-taskname", "value"),
-    State("taskID-search-button", "children"),
+	State("taskID-search-button", "children"),
 	State("criteria-search-button", "children"),
 	State("search-result-container", "hidden"),
 	prevent_initial_call=True)
@@ -234,7 +246,7 @@ def make_plots(plots):
 			continue
 	return output
 
-### Callbacks for submission
+### Callbacks for switching between panels in submission
 @app.callback(
 	Output('submission-tabs', 'value'),
 	Input({'type': 'back-button', 'index': '2'}, 'n_clicks'),
@@ -255,12 +267,47 @@ def switch_tab(nb2,nb3,nb4, nn1, nn2, nn3):
 		return str(current_tab + 1)
 
 @app.callback(
+	Output('task-config-review', 'children'),
+	Input('submission-tabs', 'value')
+)
+def display_review(value):
+	configurations = (
+		("nParallelEvaluation", 'Number of parallel evaluations'),
+		("maxPoints", 'Max number of points'),
+		("maxEvaluationJobs", 'Max number of evaluation jobs'),
+		("nPointsPerIteration", 'Number of points per iterations'),
+		("minUnevaluatedPoints", 'Min number unevaluated jobs'),
+		("searchAlgorithm", 'Search algorithm'),
+		("sites", 'Grid sites'),
+		("evaluationContainer", 'Evaluation container'),
+		("evaluationExec", 'Evaluation execution'),
+		("evaluationInput", 'Evaluation input'),
+		("trainingDS", 'Training dataset'),
+		("evaluationTrainingData", 'Training data'),
+		("evaluationOutput", 'Evaluation output'),
+		("evaluationMetrics", 'Evaluation metrics'),
+		("customOutDS", 'Output dataset name'),
+	)
+	if value=='4':
+		data = {}
+		for att, index in configurations:
+			if getattr(job_config, att):
+				data[index] = [str(getattr(job_config, att))]
+		table = pd.DataFrame.from_dict(data, orient='index', columns=['Value'])
+		table.index.set_names('Configuration', inplace=True)
+		table = dbc.Table.from_dataframe(table, striped=True, bordered=True, hover=True, index=True)	
+		return table
+	else:
+		return None
+
+### Callbacks for saving configurations
+@app.callback(
 	Output("configuration-alert", 'is_open'),
 	Output("configuration-alert", 'header'),
 	Output("configuration-alert", 'children'),
 	Output("configuration-alert", 'icon'),
 	Input({'type': 'save-button', 'index':'3'}, 'n_clicks'),
-	State("nParallelEvaluations", 'value'),
+	State("nParallelEvaluation", 'value'),
 	State("maxPoints", 'value'),
 	State("maxEvaluationJobs", 'value'),
 	State("nPointsPerIteration", 'value'),
@@ -274,7 +321,7 @@ def switch_tab(nb2,nb3,nb4, nn1, nn2, nn3):
 	State("evaluationTrainingData", 'value'),
 	State("evaluationOutput", 'value'),
 	State("evaluationMetrics", 'value'),
-	State("customOutDS", 'id'),
+	State("customOutDS", 'value'),
 	prevent_initial_call=True
 )
 def save_config(*args):
@@ -287,13 +334,303 @@ def save_config(*args):
 		success, ret = check_set(att, value, job_config)
 		if not success:
 			error_messages.append( f'({n_errors+1}) ' + str(ret))
-	print(job_config.__dict__)
 	if len(error_messages) == 0:
 		return True, messages['configuration']['valid']['header'], messages['configuration']['valid']['body'], 'success'
 	else:
 		error_messages.insert(0, messages['configuration']['invalid']['body'])
 		return True, messages['configuration']['invalid']['header'], '\n'.join(error_messages), 'warning'
 
+### Change name of hyperparameter upon input name
+@app.callback(Output({"type": "hyperparameter-name", "index": MATCH}, "children"), 
+			Input({"type": "hyperparameter-name-input", "index": MATCH}, "value"), 
+			prevent_initial_call=True)
+def change_title(name):
+	index=callback_context.inputs_list[0]['id']["index"]
+	if name and (not bool(re.search(u"\W", name))):
+		hyperparameters[index].name=name
+		return name
+	else:
+		hyperparameters[index].name=None
+		return "Undefined Hyperparameter"
+
+### Display method dimension
+@app.callback(
+	Output({"type": "method-dimension-container", "index": MATCH}, "children"),
+	Input({"type": "sampling-method-selector", "index": MATCH}, "value"),
+	prevent_initial_call=True
+)
+def show_method_info(selected_method):
+	index=callback_context.inputs_list[0]['id']["index"]
+	messages={
+		"Categorical": "The value of this hyperparameter in a hyperparameter point is uniformly picked from a list of values that you will specify.",
+		'Normal': 'The numerical value of this hyperparameter or its logarithm is sampled over a Gaussian distribution defined by a mean \u03BC and variance \u03C3\u00B2 that you will specify.',
+		'Uniform': 'The numberical value of this hyperparameter or logarithms is uniformly sampled from a range that you will specify'
+	}
+	hyperparameters[index].method=selected_method
+	return hyperparameters[index].display_method
+
+### Add value to categories
+@app.callback(
+	Output({"type": "display-items", "index": MATCH}, "options"),
+	Output({"type": "display-items", "index": MATCH}, "value"),
+	Output({"type":"item-value-input", "index": MATCH}, "value"),
+	Input({"type":"add-item-button", "index": MATCH}, "n_clicks"),
+	Input({"type": "display-items", "index": MATCH}, "value"),
+	State({"type":"item-value-input", "index": MATCH}, "value"),
+	State({"type": "display-items", "index": MATCH}, "options"),
+	State({"type": "display-items", "index": MATCH}, "value"),
+	prevent_initial_call=True)
+def display_values(n1, activeValues, inputValue, options, values):
+	index=callback_context.inputs_list[0]['id']["index"]
+	triggeringInput="new-value"
+	if "display-items" in callback_context.triggered[0]["prop_id"]:
+		triggeringInput="active-value"
+	if triggeringInput=="new-value":
+		if inputValue is None: 
+			inputValue = ""
+		inputValue = inputValue.strip()
+		if not {"label": inputValue, "value": inputValue} in options:
+			hyperparameters[index].dimensions["Categorical"]["categories"].append(inputValue)
+			return options + [{"label": inputValue, "value": inputValue}], values+[inputValue], ""
+		else:
+			return options, values, inputValue
+	else: 
+		hyperparameters[index].dimensions["Categorical"]['categories']=activeValues
+		return options, values, inputValue
+
+@app.callback(
+	Output({"type": "low", "index": MATCH}, "valid"),
+	Output({"type": "low", "index": MATCH}, "invalid"),
+	Output({"type": "high", "index": MATCH}, "valid"),
+	Output({"type": "high", "index": MATCH}, "invalid"),
+	Input({"type": "low", "index": MATCH}, "value"),
+	Input({"type": "high", "index": MATCH}, "value"),
+	Input({"type": 'isInt', "index": MATCH}, 'value'),
+	prevent_initial_call=True
+)
+def low_high_reaction(low, high, isInt):
+	index=callback_context.inputs_list[0]['id']["index"]
+	hyperparameters[index].dimensions['Uniform']['isInt']=isInt
+	if isInt:
+		if checkInt(low) and checkInt(high) and int(high)>int(low):
+			hyperparameters[index].dimensions["Uniform"]["high"]=int(high)
+			hyperparameters[index].dimensions["Uniform"]["low"]=int(low)
+			return True, False, True, False,
+		else:
+			hyperparameters[index].dimensions["Uniform"]["high"]=None
+			hyperparameters[index].dimensions["Uniform"]["low"]=None
+			return False, True, False, True
+	else:
+		if checkFloat(low) and checkFloat(high) and high>low:
+			hyperparameters[index].dimensions["Uniform"]["high"]=float(high)
+			hyperparameters[index].dimensions["Uniform"]["low"]=float(low)
+			return True, False, True, False,
+		else:
+			hyperparameters[index].dimensions["Uniform"]["high"]=None
+			hyperparameters[index].dimensions["Uniform"]["low"]=None
+			return False, True, False, True
+
+@app.callback(
+	Output({"type": "log", "index": MATCH}, "valid"),
+	Output({"type": "log", "index": MATCH}, "invalid"),
+	Input({"type": "log", "index": MATCH}, "value"),
+	State({"type": "sampling-method-selector", "index": MATCH}, "value"),
+	prevent_initial_call=True
+)
+def log_reaction(value, Method):
+	index=callback_context.inputs_list[0]['id']["index"]
+	hyperparameters[index].dimensions[Method]["base"]=value
+	if value is None:
+		return False, False
+	elif value==0:
+		hyperparameters[index].dimensions[Method]["base"]=None
+		return False, True
+	else:
+		return True, False
+
+@app.callback(
+	Output({"type": "q", "index": MATCH}, "valid"),
+	Output({"type": "q", "index": MATCH}, "invalid"),
+	Input({"type": "q", "index": MATCH}, "value"),
+	State({"type": "sampling-method-selector", "index": MATCH}, "value"),
+	prevent_initial_call=True
+)
+def q_reaction(value, Method):
+	index=callback_context.inputs_list[0]['id']["index"]
+	hyperparameters[index].dimensions[Method]["q"]=value
+	if value is None:
+		return False, False
+	elif value==0:
+		hyperparameters[index].dimensions[Method]["q"]=None
+		return False, True
+	else:
+		return True, False
+
+@app.callback(
+	Output({"type": "min", "index": MATCH}, "valid"),
+	Output({"type": "min", "index": MATCH}, "invalid"),
+	Output({"type": "max", "index": MATCH}, "valid"),
+	Output({"type": "max", "index": MATCH}, "invalid"),
+	Input({"type": "min", "index": MATCH}, "value"),
+	Input({"type": "max", "index": MATCH}, "value"),
+	State({"type": "sampling-method-selector", "index": MATCH}, "value")
+)
+def min_max_reaction(min, max, Method):
+	index=callback_context.inputs_list[0]['id']["index"]
+	# hyperparameters[index].dimensions[Method]["q"]=value
+	min_valid, max_valid=True, True
+	if min is not None and max is not None and min >= max:
+		min_valid, max_valid=False, False
+	if max is None:
+		max_valid=False
+	if min is None:
+		min_valid=False
+	if min_valid and max_valid:
+		hyperparameters[index].dimensions[Method]["low"]=min
+		hyperparameters[index].dimensions[Method]["high"]=max
+	return min_valid, not min_valid, max_valid, not max_valid
+
+@app.callback(
+	Output({"type": "mu", "index": MATCH}, "valid"),
+	Output({"type": "mu", "index": MATCH}, "invalid"),
+	Output({"type": "sigma", "index": MATCH}, "valid"),
+	Output({"type": "sigma", "index": MATCH}, "invalid"),
+	Input({"type": "mu", "index": MATCH}, "value"),
+	Input({"type": "sigma", "index": MATCH}, "value"),
+	State({"type": "sampling-method-selector", "index": MATCH}, "value")
+)
+def mu_sigma_reaction(mu, sigma, Method):
+	index=callback_context.inputs_list[0]['id']["index"]
+	# hyperparameters[index].dimensions[Method]["q"]=value
+	mu_valid, sigma_valid=True, True
+	if mu is None:
+		mu_valid=False
+	if sigma is None or sigma==0:
+		sigma_valid=False
+	if mu_valid and sigma_valid:
+		hyperparameters[index].dimensions[Method]["mu"]=mu
+		hyperparameters[index].dimensions[Method]["sigma"]=sigma
+	return mu_valid, not mu_valid, sigma_valid, not sigma_valid
+
+# Save current hyperparameter and add new one
+@app.callback(Output("search-space-board", "children"), 
+			Output("saved-search-space", "children"),
+			Output('saved-search-space-review', 'children'),
+
+			Output("search-space-info", "children"),
+			Output("search-space-info", "is_open"),
+
+			Input("add-button", "n_clicks"), 
+			Input("save-button", "n_clicks"),
+
+			Input("upload-search-space", "contents"),
+			Input("upload-search-space", "filename"),
+
+			State("saved-search-space", "children"),
+			prevent_initial_call=True)
+def save_add_hyperparameter(index, saveSignal, contents, filenames, saved_hyperparameters):
+	trigger=callback_context.triggered[0]["prop_id"]
+	n=0
+	if "add-button" in trigger:
+		hyperparameters[index]=Hyperparameter(index=index)
+	elif 'save-button' in trigger:
+		# check the HPs in the editor for those that are valid
+		print(hyperparameters)
+		print(search_space)
+		removing_items = {id: search_space.get(id) for id in [item.get('props',{}).get('id',{}).get('index', -1) for item in saved_hyperparameters if info in item.get('props',{}).get('title',"")]}
+		for id, hp in hyperparameters.items():
+			# check if it is possible to generate a search space element from the HP, this also checks if the HP is valid
+			print(hp.isValid)
+			if not hp.isValid: continue
+			if hp.name in [element.name for element in search_space.values()]: continue
+			# add HP to search_space
+			search_space[id]=hp
+		for id, item in search_space.items():
+			if id in hyperparameters:
+				hyperparameters.pop(id)
+		for id, item in removing_items.items():
+			if id in search_space:
+				search_space.pop(id)
+	else:
+		for content, filename in zip(contents, filenames):
+			if not filename.endswith(".json"):
+				continue
+			content_type, content_string = content.split(",")
+			content = json.loads(base64.b64decode(content_string))
+			for name in content:
+				try:
+					element = content[name]
+					index = get_index(search_space)
+					tmp = Hyperparameter(index=index, name=name, method=getMethod(element["method"]))
+					if tmp.method == "Categorical":
+						tmp.dimensions["Categorical"]["categories"] = [ str(el) for el in element["dimension"]["categories"] ]
+					else:
+						for key in element["dimension"]:
+							tmp.dimensions[tmp.method][key] = element["dimension"][key]
+					if tmp.isValid and tmp.name not in [hp.name for hp in search_space.values()]:
+						search_space[index] = tmp
+						n += 1
+				except:
+					continue
+	return [hp.render() for hp in hyperparameters.values()], [element.display_search_space_element() for element in search_space.values()], [element.display_search_space_element(review=True) for element in search_space.values()], html.P("%d elements were successfully loaded from the provided search space file." % n if n>0 else "None of the elements in the provided file were loaded to the search space."), 'upload-search-space' in trigger 
+
+@app.callback(
+	Output({"type": "display-searchspace-element", "index": MATCH}, "title"),
+	Output({"type": "display-searchspace-element-delete", "index": MATCH}, 'children'),
+	Output({"type": "display-searchspace-element-delete", "index": MATCH}, 'color'),
+	Input({"type": "display-searchspace-element-delete", "index": MATCH}, 'n_clicks'),
+	State({"type": "display-searchspace-element", "index": MATCH}, "title"),
+	prevent_initial_call=True
+)
+def mark_hyperparameter_for_removal(n, title):
+	if n % 2==1:
+		return title + info, 'Keep hyperparameter', 'primary'
+	else:
+		return title.replace(info, ""), 'Mark for removal', 'danger'
+
+@app.callback(
+	Output('download-search-space', "data"),
+	Output('download-config', 'data'),
+	Input('download-button', 'n_clicks'),
+	State('download-dropdown', "value"),
+	prevent_initial_call=True
+)
+def download(n, files):
+	return {'content': json.dumps(task.SearchSpace), 'filename': 'search_space.json'} if ('search_space' in files and len(search_space)>0) else None, {'content': job_config.to_json(), 'filename': 'config.json'} if 'configuration' in files else None, 
+
+@app.callback(
+	Output("task-conf-info", "children"),
+	Output("task-conf-info", "is_open"),
+	Output("configuration-container", 'children'),
+	Input("upload-task-conf", "contents"),
+	Input("upload-task-conf", "filename"),
+	prevent_initial_call=True 
+)
+def load_search_space(content, filename):
+	if not filename.endswith(".json"):
+		return "Task configration input file must be in .json format.", True, render_job_config(job_config)
+	content_type, content_string = content.split(",")
+	configs = json.loads(base64.b64decode(content_string))
+	failList = []
+	for config, value in configs.items():
+		# print(config, value)
+		if config in ['uuid']: continue
+		if config == "steeringExec":
+			if value.split("-l=")[-1] in searchAlgorithmOptions:
+				task.JobConfig.searchAlgorithm = value.split("-l=")[-1]
+		else:
+			if hasattr(job_config, config):
+				try:
+					setattr(job_config, config, value)
+				except:
+					failList += config
+					pass
+	# print(configs)
+	if len(failList) > 0:
+		return "The following configurations cannot be set from the input file. Please manually set them in the Configuration \n %s" % ", ".join(
+			failList), True, render_job_config(job_config)
+	else:
+		return "All configurations successfully set.", True, render_job_config(job_config)
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+	app.run_server(debug=True)

@@ -2,6 +2,7 @@ import copy
 import json
 
 import yaml
+import uuid
 from pandaclient import MiscUtils, PsubUtils
 
 siteOptions = ['ANALY_BNL_GPU_ARC', 'ANALY_OU_OSCER_GPU_TEST', 'ANALY_QMUL_GPU_TEST',
@@ -21,7 +22,7 @@ class JobConfig:
         self._nPointsPerIteration = 2
         self._minUnevaluatedPoints = 0
         self._steeringContainer = "gitlab-registry.cern.ch/zhangruihpc/steeringcontainer:0.0.4"
-        self._searchAlgorithm = 'nevergrad'
+        self._searchAlgorithm = searchAlgorithmOptions[0]
         self._searchSpaceFile = ""
         # evaluation configurations
         self._evaluationContainer = "docker://gitlab-registry.cern.ch/zhangruihpc/evaluationcontainer:mlflow"
@@ -155,11 +156,11 @@ class JobConfig:
 
     @evaluationContainer.setter
     def evaluationContainer(self, t):
-        if isinstance(t, str):
+        if isinstance(t, str) and t.strip():
             self._evaluationContainer = t
         else:
             raise ValueError(
-                "{} is an invalid value of searchSpaceFile".format(t))
+                "{} is an invalid value of evaluation container".format(t))
 
     @property
     def evaluationExec(self):

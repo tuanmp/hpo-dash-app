@@ -3,7 +3,7 @@ from dash import html, dcc
 def footer(**kwargs):
     return html.Footer(
         id="footer", 
-        className='page-footer', 
+        className='fixed-bottom', 
         children=[
             "This is the footer, will format later"
         ]

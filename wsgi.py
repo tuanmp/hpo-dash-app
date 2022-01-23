@@ -1,6 +1,4 @@
 import os
-os.environ['PANDA_AUTH']='oidc'
-os.environ['PANDA_AUTH_VO']='atlas'
 from apps.headers import header
 import dash
 from dash import dcc

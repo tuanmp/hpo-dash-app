@@ -1,0 +1,17 @@
+{
+    "x" : {
+        "method": "uniformint",
+        "dimension": {
+            "low": 0,
+            "hihg": 5
+        }
+    },
+
+    "y": {
+        "method": "uniformint",
+        "dimension": {
+            "low": 0,
+            "hihg": 5
+        }
+    }
+}

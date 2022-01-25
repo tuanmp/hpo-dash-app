@@ -1,0 +1,1 @@
+phpo --loadJson config.json --site ANALY_CERN-PTEST --outDS user.tupham.`uuidgen`  --nParallelEvaluation 2 --maxPoints 10 --searchSpaceFile search_space.json -v

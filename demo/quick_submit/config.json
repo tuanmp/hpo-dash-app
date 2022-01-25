@@ -1,0 +1,6 @@
+{
+    "steeringExec": "run --rm -v \"$(pwd)\":/HPOiDDS gitlab-registry.cern.ch/zhangruihpc/steeringcontainer:0.0.2 /bin/bash -c \"hpogrid generate --n_point=%NUM_POINTS --max_point=%MAX_POINTS --infile=/HPOiDDS/%IN  --outfile=/HPOiDDS/%OUT -l nevergrad\"", 
+    "evaluationExec": "python ATLASMLHPO/scripts/dummy_training_script/train.py input.json", 
+    "evaluationContainer": "docker://gitlab-registry.cern.ch/zhangruihpc/evaluationcontainer:mlflow", 
+    "evaluationMetrics": "metrics.tgz"
+}

@@ -670,6 +670,12 @@ def continue_auth(signal):
 	print(oidc.get_token_path())
 	print("Is token exist?", os.path.exists(oidc.get_token_path()))
 	print(oidc.check_token())
+	from pandaclient import Client
+	local_curl = Client._Curl()
+	local_oidc = local_curl.get_oidc(PLogger.getPandaLogger())
+	print(local_oidc.get_token_path())
+	print("Is token exist?", os.path.exists(local_oidc.get_token_path()))
+	print(local_oidc.check_token())
 	# task.submit(verbose=True, files_from='demo/quick_submit')
 	return True
 

@@ -234,7 +234,7 @@ class my_Curl(_Curl):
     def __init__(self):
         super().__init__()
 
-    def get_my_oidc(self, tmp_log):
+    def get_my_oidc(self, tmp_log, verbose=False):
         parsed = urlparse(baseURLSSL)
         if parsed.port:
             auth_url = '{0}://{1}:{2}/auth/{3}_auth_config.json'.format(parsed.scheme, parsed.hostname, parsed.port,
@@ -242,7 +242,7 @@ class my_Curl(_Curl):
         else:
             auth_url = '{0}://{1}/auth/{3}_auth_config.json'.format(parsed.scheme, parsed.hostname, parsed.port,
                                                                     self.authVO)
-        oidc = my_OpenIdConnect_Utils(auth_url, log_stream=tmp_log, verbose=self.verbose)
+        oidc = my_OpenIdConnect_Utils(auth_url, log_stream=tmp_log, verbose=verbose)
         return oidc
 
     

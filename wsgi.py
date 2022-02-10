@@ -630,7 +630,7 @@ def load_search_space(content, filename):
 		return "All configurations successfully set.", True, render_job_config(job_config)
 
 curl = my_Curl()
-oidc = curl.get_my_oidc(PLogger.getPandaLogger())
+oidc = curl.get_my_oidc(PLogger.getPandaLogger(), verbose=True)
 
 @app.callback(
 	Output("task-submit-button", "disabled"),

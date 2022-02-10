@@ -132,7 +132,14 @@ def getDType(instance):
 
 class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
     def __init__(self, auth_config_url, token_dir=None, log_stream=None, verbose=False):
-        super().__init__(auth_config_url, token_dir=token_dir, log_stream=log_stream, verbose=verbose)
+        self.auth_config_url = auth_config_url
+        if token_dir is None:
+            token_dir = os.environ['PANDA_CONFIG_ROOT']
+        self.token_dir = os.path.expanduser(token_dir)
+        if not os.path.exists(self.token_dir):
+            os.makedirs(self.token_dir, exist_ok=True)
+        self.log_stream = log_stream
+        self.verbose = verbose
 
     def my_run_device_authorization_flow(self):
         s, o, dec = self.check_token()

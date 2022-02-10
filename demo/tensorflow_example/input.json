@@ -1,0 +1,8 @@
+{
+    "activation": "relu",
+    "optimizizer": "adam",
+    "n_dense": 4,
+    "dropout": 0.5,
+    "batch_size": 128,
+    "epochs": 2
+}

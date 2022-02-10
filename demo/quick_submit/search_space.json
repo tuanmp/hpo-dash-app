@@ -3,7 +3,7 @@
         "method": "uniformint",
         "dimension": {
             "low": 0,
-            "hihg": 5
+            "high": 5
         }
     },
 
@@ -11,7 +11,7 @@
         "method": "uniformint",
         "dimension": {
             "low": 0,
-            "hihg": 5
+            "high": 5
         }
     }
 }

@@ -401,7 +401,9 @@ def submission(**kwargs):
         children=[
             review,
 			dbc.Button('Back', id={'type': 'back-button', 'index':'4'}),
-			# dbc.Button('Save and Continue', id={'type': 'next-button', 'index':'upload'})
+			dbc.Button("Submit", id="task-submit-button"),
+			html.A('Click here to open OIDC Auth', href="#", hidden=True, className='btn btn-outline-primary', target='_blank', id="oidc-auth-window"),
+			dbc.Button('Continue', id="task-submit-continue-after-auth-button")
             # dcc.Loading(children=dbc.Button("Search", id="criteria-search-button"), fullscreen=True),
         ]
 	)

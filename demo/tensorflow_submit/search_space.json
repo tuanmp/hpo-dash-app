@@ -1,0 +1,47 @@
+{
+    "activation" : {
+        "method": "categorical",
+        "dimension": {
+            "categories": ["relu", "tanh", "sigmoid", "elu"]
+        }
+    },
+
+    "optimizer": {
+        "method": "categorical",
+        "dimension": {
+            "categories": ["adam", "RMSprop", "SGD"]
+        }
+    },
+
+    "n_dense": {
+        "method": "uniformint",
+        "dimension": {
+            "low": 1,
+            "high": 5
+        }
+    },
+
+    "dropout": {
+        "method": "uniform",
+        "dimension": {
+            "low": 0,
+            "high": 0.99
+        }
+    },
+
+    "batch_size": {
+        "method": "uniformint",
+        "dimension": {
+            "low": 5,
+            "high": 10
+        }
+    },
+
+    "epochs": {
+        "method": "uniformint",
+        "dimension": {
+            "low": 5,
+            "high": 20
+        }
+    }
+}

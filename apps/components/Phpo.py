@@ -8,7 +8,8 @@ from pandaclient import (Client, MiscUtils, PandaToolsPkgInfo, PLogger,
 						 PsubUtils)
 
 from .JobConfigurations import JobConfig
-from .utils import taskAttributes
+from .SearchSpace import Hyperparameter
+from .utils import taskAttributes, get_index, getMethod
 
 tmpLog = PLogger.getPandaLogger()
 
@@ -52,22 +53,23 @@ class Phpo:
 			if val == None or val == "":
 				continue
 			if att == "outDS":
-				if not PsubUtils.checkOutDsName(outDS=val, official=self._official, nickName=PsubUtils.getNickname(), verbose=True):
+				nickName = PsubUtils.getNickname()
+				if not PsubUtils.checkOutDsName(outDS=val, official=self._official, nickName=nickName, verbose=True):
 					tmpLog.exception("Invalid outDS name: %s" % val)
 			if att == "site":
 				val = ",".join(val)
 			if isinstance(val, bool):
-				if val:
+				if val is True:
 					execStr += ' --{0}'.format(att)
 			else:
 				execStr += " --{0}={1}".format(att, val)
 		return execStr
 
-	def _makeSandbox(self, verbose=False):
+	def _makeSandbox(self, verbose=False, files_from="."):
 		# create tmp dir
 		curDir = os.getcwd()
-		tmpDir = os.path.join(curDir, MiscUtils.wrappedUuidGen())
-		os.makedirs(tmpDir)
+		tmpDir = os.path.join(curDir, 'tmp', MiscUtils.wrappedUuidGen())
+		os.makedirs(tmpDir, exist_ok=True)
 
 		# sandbox
 		if verbose:
@@ -77,7 +79,7 @@ class Phpo:
 		extensions = ['json', 'py', 'sh', 'yaml']
 		find_opt = ' -o '.join(['-name "*.{0}"'.format(e) for e in extensions])
 		tmpOut = MiscUtils.commands_get_output(
-			'find . {0} | tar cvfz {1} --files-from - '.format(find_opt, archiveFullName))
+			'find {2} {0} | tar cvfz {1} --files-from - '.format(find_opt, archiveFullName, files_from))
 
 		if verbose:
 			print(tmpOut + '\n')
@@ -102,7 +104,7 @@ class Phpo:
 
 		return tmpDir, archiveName, sourceURL
 
-	def taskParams(self):
+	def taskParams(self, archiveName, sourceURL):
 		config = self.JobConfig
 		taskParamMap = {}
 		taskParamMap['noInput'] = True
@@ -128,10 +130,10 @@ class Phpo:
 		taskParamMap['noEmail'] = True
 		if self._workingGroup is not None:
 			taskParamMap['workingGroup'] = self._workingGroup
-		if len(config.site) == 1:
-			taskParamMap['site'] = config.site[0]
+		if len(config.sites) == 1:
+			taskParamMap['site'] = config.sites[0]
 		else:
-			taskParamMap['includedSite'] = config.site
+			taskParamMap['includedSite'] = config.sites
 		taskParamMap['multiStepExec'] = {'preprocess': {'command': '${TRF}',
 														'args': '--preprocess ${TRF_ARGS}'},
 										 'postprocess': {'command': '${TRF}',
@@ -169,30 +171,22 @@ class Phpo:
 										  'max_points': config.maxPoints,
 										  'num_points_per_generation': config.nPointsPerIteration,
 										  }
-		if config.minUnevaluatedPoints:
+		if config.minUnevaluatedPoints is not None:
 			taskParamMap['hpoRequestData']['min_unevaluated_points'] = config.minUnevaluatedPoints
-		if config.searchSpaceFile:
-			with open(config.searchSpaceFile, mode='r') as json_file:
-				optSpace = json.load(json_file)
-				if optSpace:
-					taskParamMap['hpoRequestData']['opt_space'] = optSpace
-				else:
-					tmpLog.warning(
-						"%s empty, switching to internal search space." % config.searchSpaceFile)
-		else:
-			taskParamMap['hpoRequestData']['opt_space'] = self.SearchSpace
-			if not taskParamMap['hpoRequestData']['opt_space']:
-				tmpLog.warning(
-					"Empty search space. Job will not run. Define a valid search space by using method 'define_searchSpace' or specifying a non-empty external search space.")
+
+		taskParamMap['hpoRequestData']['opt_space'] = self.SearchSpace
+		if not taskParamMap['hpoRequestData']['opt_space']:
+			tmpLog.warning(
+				"Empty search space. Job will not run. Define a valid search space by using method 'define_searchSpace' or specifying a non-empty external search space.")
 
 		taskParamMap['jobParameters'] = [
 			{'type': 'constant',
 			 'value': '-o {0} -j "" --inSampleFile {1}'.format(config.evaluationOutput,
 															   config.evaluationInput)
-			 }
-			# {'type': 'constant',
-			#  'value': '-a {0} --sourceURL {1}'.format(archiveName, sourceURL)
-			#  },
+			 },
+			{'type': 'constant',
+			 'value': '-a {0} --sourceURL {1}'.format(archiveName, sourceURL)
+			 },
 		]
 		taskParamMap['jobParameters'] += [
 			{'type': 'constant',
@@ -208,19 +202,19 @@ class Phpo:
 			 'value': '"',
 			 },
 		]
-		if config.checkPointToSave:
+		if config.checkPointToSave is not None:
 			taskParamMap['jobParameters'] += [
 				{'type': 'constant',
 				 'value': '--checkPointToSave {0}'.format(config.checkPointToSave)
 				 },
 			]
-			if config.checkPointInterval:
+			if config.checkPointInterval is not None:
 				taskParamMap['jobParameters'] += [
 					{'type': 'constant',
 					 'value': '--checkPointInterval {0}'.format(config.checkPointInterval)
 					 },
 				]
-		if config.checkPointToLoad:
+		if config.checkPointToLoad is not None:
 			taskParamMap['jobParameters'] += [
 				{'type': 'constant',
 				 'value': '--checkPointToLoad {0}'.format(config.checkPointToLoad)
@@ -294,22 +288,22 @@ class Phpo:
 
 		return taskParamMap
 
-	def submit(self, verbose=False, checkOnly=False, python3=False, noEmail=True, dumpJson=None, loadJson=None, dumpYaml=None):
-		# panda_jupyter.setup()
-		# check grid-proxy
-		# PsubUtils.check_proxy(verbose, self._voms)
+	def submit(self, verbose=False, checkOnly=False, python3=False, noEmail=True, dumpJson=None, loadJson=None, dumpYaml=None, files_from="."):
+
 		config = self.JobConfig
 		if self._intrSrv:
 			Client.useIntrServer()
 
-		# tmpDir, archiveName, sourceURL = self._makeSandbox(verbose=verbose)
-		taskParamMap = self.taskParams()
+		tmpDir, archiveName, sourceURL = self._makeSandbox(verbose=verbose, files_from=files_from)
+		taskParamMap = self.taskParams(archiveName, sourceURL)
 
 		if checkOnly:
 			if verbose:
 				tmpLog.debug("==== taskParams ====")
 				print(yaml.dump(taskParamMap))
-			return
+			return 
+
+		# print("Here is task param map", taskParamMap)
 
 		tmpLog.info("submit {0}".format(config.outDS))
 		tmpStat, tmpOut = Client.insertTaskParams(taskParamMap, verbose, True)
@@ -323,7 +317,10 @@ class Phpo:
 		if tmpOut[0] in [0, 3]:
 			tmpStr = tmpOut[1]
 			tmpLog.info(tmpStr)
-			os.remove(tmpDir)
+			try:
+				os.remove(tmpDir)
+			except:
+				pass
 			try:
 				m = re.search('jediTaskID=(\d+)', tmpStr)
 				taskID = int(m.group(1))
@@ -348,24 +345,60 @@ class Phpo:
 				yaml.dump(dumpItem, f)
 		return
 
-	def saveSearchSpace(self, name: str):
-		search_space = {
-			element.name: element.search_space_element for element in self.HyperParameters.values()}
-		if name and name.endswith(".json") and name.replace(".json", ""):
-			with open(name, "w") as f:
-				json.dump(search_space, f, indent=4)
-		elif name and name.endswith(".yaml") and name.replace(".yaml", ""):
-			with open(name, "w") as f:
-				yaml.dump(search_space, f)
-		return
+	# def saveSearchSpace(self, name: str):
+	# 	search_space = {
+	# 		element.name: element.search_space_element for element in self.HyperParameters.values()}
+	# 	if name and name.endswith(".json") and name.replace(".json", ""):
+	# 		with open(name, "w") as f:
+	# 			json.dump(search_space, f, indent=4)
+	# 	elif name and name.endswith(".yaml") and name.replace(".yaml", ""):
+	# 		with open(name, "w") as f:
+	# 			yaml.dump(search_space, f)
+	# 	return
 
-	def saveConfig(self, name: str):
-		if name and name.endswith(".json") and name.replace(".json", ""):
-			self.JobConfig.to_json(name=name)
-		elif name and name.endswith(".yaml") and name.replace(".yaml", ""):
-			self.JobConfig.to_yaml(name=name)
-		return
+	# def saveConfig(self, name: str):
+	# 	if name and name.endswith(".json") and name.replace(".json", ""):
+	# 		self.JobConfig.to_json(name=name)
+	# 	elif name and name.endswith(".yaml") and name.replace(".yaml", ""):
+	# 		self.JobConfig.to_yaml(name=name)
+	# 	return
 
-	@staticmethod
-	def check_proxy(verbose=False, vomsRole=None, refresh_info=False, generate_new=True):
-		return PsubUtils.check_proxy(verbose, vomsRole, refresh_info=refresh_info, generate_new=generate_new)
+	def add_hyperparameter(self, name, element):
+		index=get_index(self.HyperParameters)
+		try:
+			tmp = Hyperparameter(index=index, name=name, method=getMethod(element["method"]))
+			if tmp.method == "Categorical":
+				tmp.dimensions["Categorical"]["categories"] = [ str(el) for el in element["dimension"]["categories"] ]
+			else:
+				for key in element["dimension"]:
+					tmp.dimensions[tmp.method][key] = element["dimension"][key]
+			if tmp.method == "Uniform":
+				tmp.dimensions["Uniform"]["isInt"]=('int' in element["method"])
+			if tmp.isValid and tmp.name not in [hp.name for hp in self.HyperParameters.values()]:
+				self.HyperParameters[index] = tmp
+			return 1
+		except:
+			print(f"Can't load hyperparameter {name}: {element}")
+			return 0
+
+	def set_config(self, config, value):
+		fail_list=[]
+		if config in ['uuid']: 
+			return fail_list
+		if config == "steeringExec":
+			if value.split("-l=")[-1] in self.JobConfig._searchAlgOptions:
+				self.JobConfig.searchAlgorithm = value.split("-l=")[-1]
+			else:
+				fail_list += [config]
+		else:
+			if hasattr(self.JobConfig, config):
+				try:
+					setattr(self.JobConfig, config, value)
+				except:
+					fail_list += [config]
+		return fail_list
+		
+	
+
+
+

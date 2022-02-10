@@ -1,4 +1,4 @@
-import os
+import os, shutil, subprocess
 from apps.headers import header
 import dash
 from dash import dcc
@@ -14,7 +14,7 @@ from apps.monitor import monitor
 from apps.homepage import homepage
 from apps.develop import develop
 from apps.footer import footer
-from apps.components.utils import check_set
+from apps.components.utils import check_set, my_OpenIdConnect_Utils, my_Curl
 import dash_bootstrap_components as dbc
 from apps.components.TaskRetriever import Retriever
 from apps.components.SearchSpace import Hyperparameter
@@ -23,6 +23,10 @@ from apps.components.utils import get_index, getMethod
 import time
 import json, yaml, base64
 import re
+import uuid 
+from pandaclient import PLogger
+# from queue import Queue, Empty
+# from threading import Thread
 
 external_stylesheets = [dbc.themes.BOOTSTRAP]
 
@@ -49,9 +53,25 @@ job_config = task.JobConfig
 hyperparameters = {}
 search_space = task.HyperParameters
 index=len(hyperparameters)+len(search_space)
+authorization_output = {}
 info = ' (marked for removal)'
 with open('apps/messages.json') as f:
 	messages = json.load(f)
+
+def enqueue_output(out, queue):
+    for line in iter(out.readline, b''):
+        queue.put(line)
+    out.close()
+
+
+def getOutput(outQueue):
+    outStr = ''
+    try:
+        while True: # Adds output from the Queue until it is empty
+            outStr+=outQueue.get_nowait()
+
+    except Empty:
+        return outStr
 
 @app.callback(
 	Output('app-page-content', 'children'),
@@ -70,6 +90,8 @@ def navigate(hash, pathname, page_content):
 		hyperparameters={}
 		global search_space
 		search_space=task.HyperParameters
+		global job_config
+		job_config=task.JobConfig
 		global index
 		index=len(hyperparameters)+len(search_space)
 		if len(hyperparameters)==0:
@@ -555,21 +577,8 @@ def save_add_hyperparameter(index, saveSignal, contents, filenames, saved_hyperp
 				continue
 			content_type, content_string = content.split(",")
 			content = json.loads(base64.b64decode(content_string))
-			for name in content:
-				try:
-					element = content[name]
-					index = get_index(search_space)
-					tmp = Hyperparameter(index=index, name=name, method=getMethod(element["method"]))
-					if tmp.method == "Categorical":
-						tmp.dimensions["Categorical"]["categories"] = [ str(el) for el in element["dimension"]["categories"] ]
-					else:
-						for key in element["dimension"]:
-							tmp.dimensions[tmp.method][key] = element["dimension"][key]
-					if tmp.isValid and tmp.name not in [hp.name for hp in search_space.values()]:
-						search_space[index] = tmp
-						n += 1
-				except:
-					continue
+			for name, element in content.items():
+				n+=task.add_hyperparameter(name, element)
 	return [hp.render() for hp in hyperparameters.values()], [element.display_search_space_element() for element in search_space.values()], [element.display_search_space_element(review=True) for element in search_space.values()], html.P("%d elements were successfully loaded from the provided search space file." % n if n>0 else "None of the elements in the provided file were loaded to the search space."), 'upload-search-space' in trigger 
 
 @app.callback(
@@ -612,23 +621,53 @@ def load_search_space(content, filename):
 	failList = []
 	for config, value in configs.items():
 		# print(config, value)
-		if config in ['uuid']: continue
-		if config == "steeringExec":
-			if value.split("-l=")[-1] in searchAlgorithmOptions:
-				task.JobConfig.searchAlgorithm = value.split("-l=")[-1]
-		else:
-			if hasattr(job_config, config):
-				try:
-					setattr(job_config, config, value)
-				except:
-					failList += config
-					pass
+		failList+=task.set_config(config, value)
 	# print(configs)
 	if len(failList) > 0:
 		return "The following configurations cannot be set from the input file. Please manually set them in the Configuration \n %s" % ", ".join(
 			failList), True, render_job_config(job_config)
 	else:
 		return "All configurations successfully set.", True, render_job_config(job_config)
+
+curl = my_Curl()
+oidc = curl.get_my_oidc(PLogger.getPandaLogger())
+
+@app.callback(
+	Output("task-submit-button", "disabled"),
+	Output('oidc-auth-window', 'hidden'),
+	Output('oidc-auth-window', 'href'),
+	Input("task-submit-button", "n_clicks"),
+	prevent_initial_call=True)
+def submit(signal):
+	print('submit')
+	# proc = (task.submit(verbose=True, files_from='demo/quick_submit'))
+	# tmp_dir = f'./tmp/{uuid.uuid4()}'
+
+	global curl
+	global oidc
+
+	s, o = oidc.my_run_device_authorization_flow()
+	print(s,o)
+	global authorization_output
+	authorization_output = o
+	if isinstance(authorization_output,dict) and 'verification_uri_complete' in authorization_output:
+		return True, False, o['verification_uri_complete']
+	else:
+		return True, True, '#'
+
+@app.callback(
+	Output('task-submit-continue-after-auth-button', 'disabled'),
+	Input("task-submit-continue-after-auth-button", "n_clicks"),
+	prevent_initial_call=True
+)
+def continue_auth(signal):
+	global authorization_output
+	global oidc 
+	if 'interval' in authorization_output:
+		s, o = oidc.get_id_token(authorization_output['token_endpoint'], authorization_output['client_id'], authorization_output['client_secret'], authorization_output['device_code'], authorization_output['interval'], authorization_output['expires_in'])
+		print(s,o)
+	task.submit(verbose=True, files_from='demo/quick_submit')
+	return True
 
 if __name__ == '__main__':
 	app.run_server(debug=True)

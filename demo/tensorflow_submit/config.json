@@ -1,0 +1,7 @@
+{
+    "steeringExec": "run --rm -v \"$(pwd)\":/HPOiDDS gitlab-registry.cern.ch/zhangruihpc/steeringcontainer:0.0.4 /bin/bash -c \"hpogrid generate --n_point=%NUM_POINTS --max_point=%MAX_POINTS --infile=/HPOiDDS/%IN  --outfile=/HPOiDDS/%OUT -l nevergrad\"", 
+    "evaluationExec": "sh exec_in_container.sh", 
+    "evaluationContainer": "docker://gitlab-registry.cern.ch/tupham/ci-docker:tensorflow-2.6.0", 
+    "evaluationMetrics": "metrics.tgz", 
+    "evaluationOutput": "output.json"
+}

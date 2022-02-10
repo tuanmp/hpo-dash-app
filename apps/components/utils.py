@@ -5,6 +5,36 @@ import sys
 from configparser import ConfigParser
 from dash import html
 import dash_bootstrap_components as dbc
+from pandaclient.Client import _Curl
+from pandaclient.openidc_utils import OpenIdConnect_Utils
+
+# import sys
+import ssl
+import uuid
+import json
+import time
+import glob
+import base64
+import datetime
+try:
+    from urllib import urlencode, unquote_plus
+    from urlparse import urlparse
+    from urllib2 import urlopen, Request, HTTPError
+except ImportError:
+    from urllib.parse import urlencode, unquote_plus, urlparse
+    from urllib.request import urlopen, Request
+    from urllib.error import HTTPError
+try:
+    baseURL = os.environ['PANDA_URL']
+except Exception:
+    baseURL = 'http://pandaserver.cern.ch:25080/server/panda'
+try:
+    baseURLSSL = os.environ['PANDA_URL_SSL']
+except Exception:
+    baseURLSSL = 'https://pandaserver.cern.ch/server/panda'
+
+baseURLCSRVSSL = "https://pandacache.cern.ch/server/panda"
+
 
 # import paramiko
 # from pandaclient import PLogger, panda_jupyter
@@ -18,7 +48,7 @@ searchAlgorithmOptions = ['hyperopt', 'skopt', 'bohb',
 steeringExecTemp = 'run --rm -v "$(pwd)":/HPOiDDS gitlab-registry.cern.ch/zhangruihpc/steeringcontainer:0.0.4 /bin/bash -c "hpogrid generate --n_point=%NUM_POINTS --max_point=%MAX_POINTS --infile=/HPOiDDS/%IN --outfile=/HPOiDDS/%OUT -l='
 taskAttributes = ("nParallelEvaluation", "maxPoints", "maxEvaluationJobs", "nPointsPerIteration",
                   "minUnevaluatedPoints", "steeringContainer", "steeringExec", "evaluationContainer",
-                  "evaluationExec", "site", "evaluationInput", "evaluationTrainingData", "trainingDS",
+                  "evaluationExec", "sites", "evaluationInput", "evaluationTrainingData", "trainingDS",
                   "evaluationOutput", "outDS", "evaluationMeta",
                   "evaluationMetrics", "checkPointToSave", "checkPointToLoad", "checkPointInterval")
 parameterDetails = {
@@ -99,6 +129,123 @@ def getDType(instance):
     if isinstance(instance, bool):
         return "Boolean"
     return None
+
+class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
+    def __init__(self, auth_config_url, token_dir=None, log_stream=None, verbose=False):
+        super().__init__(auth_config_url, token_dir=token_dir, log_stream=log_stream, verbose=verbose)
+
+    def my_run_device_authorization_flow(self):
+        s, o, dec = self.check_token()
+        if s:
+            # still valid
+            print('still valid')
+            return True, o
+        refresh_token_string = o
+        # get auth config
+        s, o = self.fetch_page(self.auth_config_url)
+        if not s:
+            print('cannot fetch oage')
+            return False, "Failed to get Auth configuration: " + o
+        auth_config = o
+        # get endpoint config
+        s, o = self.fetch_page(auth_config['oidc_config_url'])
+        if not s:
+            return False, "Failed to get endpoint configuration: " + o
+        endpoint_config = o
+        # refresh token
+        if refresh_token_string is not None:
+            s, o = self.refresh_token(endpoint_config['token_endpoint'], auth_config['client_id'],
+                                 auth_config['client_secret'], refresh_token_string)
+            # refreshed
+            if s:
+                print('token refreshed')
+                return True, o
+            else:
+                if self.verbose:
+                    self.log_stream.debug('failed to refresh token: {0}'.format(o))
+        # get device code
+        s, o = self.get_device_code(endpoint_config['device_authorization_endpoint'], auth_config['client_id'],
+                                    auth_config['audience'])
+        if not s:
+            print('cannot get device code')
+            return False, 'Failed to get device code: ' + o
+        # get ID token
+        # self.log_stream.info(("Please go to {0} and sign in. "
+        #                  "Waiting until authentication is completed").format(o['verification_uri_complete']))
+        if 'interval' in o:
+            interval = o['interval']
+        else:
+            o['interval'] = 5
+        o['token_endpoint'] = endpoint_config['token_endpoint']
+        o['client_id'] = auth_config['client_id']
+        o['client_secret'] = auth_config['client_secret']
+        # s, o = self.get_id_token(endpoint_config['token_endpoint'], auth_config['client_id'],
+        #                          auth_config['client_secret'], o['device_code'], interval, o['expires_in'])
+        # if not s:
+        #     return False, "Failed to get ID token: " + o
+        # self.log_stream.info('All set')
+        return True, o
+    
+    def get_id_token(self, token_endpoint, client_id, client_secret, device_code, interval, expires_in):
+        # self.log_stream.info('Ready to get ID token?')
+        # while True:
+        #     sys.stdout.write("[y/n] \n")
+        #     choice = raw_input().lower()
+        #     if choice == 'y':
+        #         break
+        #     elif choice == 'n':
+        #         return False, "aborted"
+        import datetime
+        if self.verbose:
+            self.log_stream.debug('getting ID token')
+        startTime = datetime.datetime.utcnow()
+        data = {'client_id': client_id,
+                'client_secret': client_secret,
+                'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
+                'device_code': device_code}
+        rdata = urlencode(data).encode()
+        req = Request(token_endpoint, rdata)
+        req.add_header('content-type', 'application/x-www-form-urlencoded')
+        while datetime.datetime.utcnow() - startTime < datetime.timedelta(seconds=expires_in):
+            try:
+                conn = urlopen(req)
+                text = conn.read().decode()
+                if self.verbose:
+                    self.log_stream.debug(text)
+                id_token = json.loads(text)['id_token']
+                with open(self.get_token_path(), 'w') as f:
+                    f.write(text)
+                return True, id_token
+            except HTTPError as e:
+                text = e.read()
+                try:
+                    description = json.loads(text)
+                    # pending
+                    if description['error'] == "authorization_pending":
+                        time.sleep(interval + 1)
+                        continue
+                except Exception:
+                    pass
+                return False, 'code={0}. reason={1}. description={2}'.format(e.code, e.reason, text)
+            except Exception as e:
+                return False, str(e)
+
+class my_Curl(_Curl):
+    def __init__(self):
+        super().__init__()
+
+    def get_my_oidc(self, tmp_log):
+        parsed = urlparse(baseURLSSL)
+        if parsed.port:
+            auth_url = '{0}://{1}:{2}/auth/{3}_auth_config.json'.format(parsed.scheme, parsed.hostname, parsed.port,
+                                                                        self.authVO)
+        else:
+            auth_url = '{0}://{1}/auth/{3}_auth_config.json'.format(parsed.scheme, parsed.hostname, parsed.port,
+                                                                    self.authVO)
+        oidc = my_OpenIdConnect_Utils(auth_url, log_stream=tmp_log, verbose=self.verbose)
+        return oidc
+
+    
 
 # def copy_panda_cfg():
 #     pandaPath = os.path.join(os.environ["HOME"], ".panda")

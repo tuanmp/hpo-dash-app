@@ -31,10 +31,10 @@ from pandaclient import PLogger
 external_stylesheets = [dbc.themes.BOOTSTRAP]
 
 app = dash.Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
+server = app.server
 app.title='hpogui'
 
 application = app.server
-server = app.server
 
 app.layout = html.Div(
 	[

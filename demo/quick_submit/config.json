@@ -1,1 +1,9 @@
-{"nParallelEvaluation": 1, "maxPoints": 10, "maxEvaluationJobs": 20, "nPointsPerIteration": 2, "steeringContainer": "gitlab-registry.cern.ch/zhangruihpc/steeringcontainer:0.0.4", "searchAlgorithm": "ax", "evaluationContainer": "docker://gitlab-registry.cern.ch/zhangruihpc/evaluationcontainer:mlflow", "evaluationInput": "input.json", "evaluationTrainingData": "input_ds.json", "evaluationOutput": "output.json", "evaluationMetrics": "metrics.tgz", "checkPointInterval": 5, "sites": ["ANALY_BNL_GPU_ARC"], "uuid": "4FE239CC-2F89-43AC-86C3-C80A8149AAE2", "siteOptions": ["ANALY_BNL_GPU_ARC", "ANALY_OU_OSCER_GPU_TEST", "ANALY_QMUL_GPU_TEST", "ANALY_MANC_GPU_TEST", "ANALY_MWT2_GPU", "ANALY_INFN-T1_GPU", "ANALY_SLAC_GPU", "ANALY_CERN-PTEST"], "searchAlgOptions": ["ax", "bayesian", "bohb", "hyperopt", "nevergrad", "random", "skopt", "tune"]}
+{
+    "steeringExec": "run --rm -v \"$(pwd)\":/HPOiDDS gitlab-registry.cern.ch/zhangruihpc/steeringcontainer:0.0.4 /bin/bash -c \"hpogrid generate --n_point=%NUM_POINTS --max_point=%MAX_POINTS --infile=/HPOiDDS/%IN  --outfile=/HPOiDDS/%OUT -l nevergrad\"", 
+    "evaluationExec": "sh exec_in_container.sh", 
+    "evaluationContainer": "docker://gitlab-registry.cern.ch/tupham/ci-docker:tensorflow-2.6.0", 
+    "evaluationMetrics": "metrics.tgz", 
+    "evaluationOutput": "output.json",
+    "nParallelEvaluation": 2,
+    "sites": ["ANALY_CERN-PTEST"]
+}

@@ -146,18 +146,18 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
         if s:
             # still valid
             print('still valid')
-            return True, o
+            return True, o, True
         refresh_token_string = o
         # get auth config
         s, o = self.fetch_page(self.auth_config_url)
         if not s:
             print('cannot fetch oage')
-            return False, "Failed to get Auth configuration: " + o
+            return False, "Failed to get Auth configuration: " + o, False
         auth_config = o
         # get endpoint config
         s, o = self.fetch_page(auth_config['oidc_config_url'])
         if not s:
-            return False, "Failed to get endpoint configuration: " + o
+            return False, "Failed to get endpoint configuration: " + o, False
         endpoint_config = o
         # refresh token
         if refresh_token_string is not None:
@@ -166,7 +166,7 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
             # refreshed
             if s:
                 print('token refreshed')
-                return True, o
+                return True, o, True
             else:
                 if self.verbose:
                     self.log_stream.debug('failed to refresh token: {0}'.format(o))
@@ -175,7 +175,7 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
                                     auth_config['audience'])
         if not s:
             print('cannot get device code')
-            return False, 'Failed to get device code: ' + o
+            return False, 'Failed to get device code: ' + o, False
         # get ID token
         # self.log_stream.info(("Please go to {0} and sign in. "
         #                  "Waiting until authentication is completed").format(o['verification_uri_complete']))
@@ -191,7 +191,7 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
         # if not s:
         #     return False, "Failed to get ID token: " + o
         # self.log_stream.info('All set')
-        return True, o
+        return True, o, False
     
     def get_id_token(self, token_endpoint, client_id, client_secret, device_code, interval, expires_in):
         # self.log_stream.info('Ready to get ID token?')

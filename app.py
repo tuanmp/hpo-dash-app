@@ -55,6 +55,7 @@ hyperparameters = {}
 search_space = task.HyperParameters
 index=len(hyperparameters)+len(search_space)
 authorization_output = {}
+uid = uuid.uuid4()
 info = ' (marked for removal)'
 with open('apps/messages.json') as f:
 	messages = json.load(f)
@@ -101,7 +102,7 @@ def navigate(hash, pathname, page_content):
 	elif pathname=='/monitor':
 		return monitor()
 	elif pathname=='/develop':
-		return develop()
+		return develop(uid)
 	return homepage()
 
 @app.callback(
@@ -632,6 +633,7 @@ def load_search_space(content, filename):
 
 curl = my_Curl()
 oidc = curl.get_my_oidc(PLogger.getPandaLogger(), verbose=True)
+is_token_valid = False
 
 @app.callback(
 	Output("task-submit-button", "disabled"),
@@ -646,13 +648,13 @@ def submit(signal):
 
 	global curl
 	global oidc
-
-	s, o = oidc.my_run_device_authorization_flow()
-	print(s,o)
+	global is_token_valid
 	global authorization_output
-	authorization_output = o
-	if isinstance(authorization_output,dict) and 'verification_uri_complete' in authorization_output:
-		return True, False, o['verification_uri_complete']
+
+	status, authorization_output, is_token_valid = oidc.my_run_device_authorization_flow()
+	print(status, authorization_output, is_token_valid)
+	if isinstance(authorization_output, dict) and 'verification_uri_complete' in authorization_output:
+		return True, False, authorization_output['verification_uri_complete']
 	else:
 		return True, True, '#'
 
@@ -664,11 +666,12 @@ def submit(signal):
 def continue_auth(signal):
 	global authorization_output
 	global oidc 
+	global is_token_valid
 	if 'interval' in authorization_output:
 		print('Getting id token')
 		s, o = oidc.get_id_token(authorization_output['token_endpoint'], authorization_output['client_id'], authorization_output['client_secret'], authorization_output['device_code'], authorization_output['interval'], authorization_output['expires_in'])
 		print(s,o)
-	print("Is token exist?", os.path.exists(oidc.get_token_path()))
+	print("Does token exist?", os.path.exists(oidc.get_token_path()))
 	s, id, _ = oidc.check_token()
 	print(s, id, _)
 	# from pandaclient import Client

@@ -667,10 +667,12 @@ def continue_auth(signal):
 	global authorization_output
 	global oidc 
 	global is_token_valid
-	if 'interval' in authorization_output:
+	try:
 		print('Getting id token')
 		s, o = oidc.get_id_token(authorization_output['token_endpoint'], authorization_output['client_id'], authorization_output['client_secret'], authorization_output['device_code'], authorization_output['interval'], authorization_output['expires_in'])
 		print(s,o)
+	except:
+		print("Unable to get id token")
 	print("Does token exist?", os.path.exists(oidc.get_token_path()))
 	s, id, _ = oidc.check_token()
 	print(s, id, _)

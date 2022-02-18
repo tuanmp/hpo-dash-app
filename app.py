@@ -92,7 +92,7 @@ def getOutput(outQueue):
 
 @app.callback(
 	Output('app-page-content', 'children'),
-	# Output('profile-button', 'label'),
+	Output('profile-button', 'children'),
 	# Output('profile-button', 'children'),
 	# Output('user-credentials', 'data'),
 	Input('url', 'hash'),
@@ -106,8 +106,8 @@ def getOutput(outQueue):
 def navigate(hash, pathname, data):
 	# profile_button_children = []
 	# curl = my_Curl()
-	# oidc = curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
-	# status, token, dec = oidc.check_token(data)
+	oidc = my_Curl().get_oidc(PLogger.getPandaLogger(), verbose=True)
+	status, token, dec = oidc.check_token(data)
 	# trigger=callback_context.triggered[0]['prop_id']
 	# if "user-credentials-container" in trigger:
 	# 	return page_content, json.loads(credentials), label, profile_content
@@ -150,15 +150,15 @@ def navigate(hash, pathname, data):
 	# 		profile_button_children.append(
 	# 			dbc.DropdownMenuItem(f'Sign in', id='authenticate-button', href="/login"),
 	# 		)
-	# try:
-	# 	label = dec['preferred_username']
-	# except:
-	# 	label = 'Login'
+	try:
+		label = dec['preferred_username']
+	except:
+		label = 'Sign in'
 	if pathname=='/home':
-		return homepage()
+		return homepage(), label
 	elif pathname=='/submission':
 		global task
-		task=Phpo()
+		task=Phpo(), label
 		global hyperparameters
 		hyperparameters={}
 		global search_space
@@ -169,12 +169,12 @@ def navigate(hash, pathname, data):
 		index=len(hyperparameters)+len(search_space)
 		if len(hyperparameters)==0:
 			hyperparameters[0]=Hyperparameter(index=0)
-		return submission(config=job_config, hyperparameters=hyperparameters, search_space=search_space), label, profile_button_children, data
+		return submission(config=job_config, hyperparameters=hyperparameters, search_space=search_space), label
 	elif pathname=='/monitor':
-		return monitor()
+		return monitor(), label
 	elif pathname=='/develop':
-		return develop(uid)
-	return homepage()
+		return develop(uid), label
+	return homepage(), label
 
 @app.callback(
 	Output("authentication-button-container", "is_open"),

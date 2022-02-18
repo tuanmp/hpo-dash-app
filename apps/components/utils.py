@@ -160,19 +160,19 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
             exp_time = datetime.datetime.utcfromtimestamp(dec['exp'])
             delta = exp_time - datetime.datetime.utcnow()
             if self.verbose:
-                        self.log_stream.debug('token expiration time : {0} UTC'.\
+                        self.log_stream.debug('Token expiration time : {0} UTC'.\
                                               format(exp_time.strftime("%Y-%m-%d %H:%M:%S")))
             # check expiration time
             if delta < datetime.timedelta(minutes=5):
                 # return refresh token
                 if 'refresh_token' in data:
                     if self.verbose:
-                        self.log_stream.debug('to refresh token')
+                        self.log_stream.debug('Refresh token available')
                     return False, data, dec
             else:
                 # return valid token
                 if self.verbose:
-                    self.log_stream.debug('valid token is available')
+                    self.log_stream.debug('Valid token is available')
                 return True, data, dec
         except Exception as e:
             self.log_stream.error('failed to decode cached token with {0}'.format(e))

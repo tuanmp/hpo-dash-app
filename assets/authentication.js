@@ -19,20 +19,20 @@ function decodeIdToken(idToken) {
     }
 }
 
-window.addEventListener('load', (event) => {
-    console.log('page is fully loaded');
+// window.addEventListener('load', (event) => {
+//     console.log('page is fully loaded');
 
-    token = local_storage.getItem('local-storage');
+//     token = local_storage.getItem('local-storage');
 
-    token = JSON.parse(token);
+//     token = JSON.parse(token);
     
-    button = document.getElementById('profile-button');
-    console.log(button)
+//     button = document.getElementById('profile-button');
+//     console.log(button)
 
-    if (('id_token' in token)) {
-        dec = decodeIdToken(token['id_token']);
-        if (dec != null) { 
-            button.innerText = dec['preferred_username']
-        }
-    }
-});
+//     if (('id_token' in token)) {
+//         dec = decodeIdToken(token['id_token']);
+//         if (dec != null) { 
+//             button.innerText = dec['preferred_username']
+//         }
+//     }
+// });

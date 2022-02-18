@@ -9,6 +9,23 @@ BUTTONS = [
     ("Review", 'review')
 ]
 
+defaults = {
+	"nParallelEvaluation": 1,
+	"maxPoints": 10,
+	"maxEvaluationJobs": 20,
+	"minUnevaluatedPoints": 0,
+	"nPointsPerIteration": 2,
+	"searchAlgorithm": "nevergrad",
+	'evaluationContainer': "docker://gitlab-registry.cern.ch/zhangruihpc/evaluationcontainer:mlflow",
+	'evaluationExec': "",
+	'evaluationInput': 'input.json', 
+	"evaluationOutput": 'output.json',
+	'evaluationMetrics': 'metrics.tgz',
+	'trainingDS': "",
+	'sites': ["ANALY_CERN-PTEST"], 
+	'customOutDS': ""
+}
+
 def render_job_config(job_config):
 	short_configurations = dbc.Container(
 		dbc.Row(
@@ -23,7 +40,7 @@ def render_job_config(job_config):
 								type='number',
 								min=1, 
 								step=1, 
-								value=job_config.nParallelEvaluation,
+								value=job_config.get('nParallelEvaluation', defaults['nParallelEvaluation']),
 								required=True,
 								persistence=True,
 								persistence_type="memory"
@@ -39,7 +56,7 @@ def render_job_config(job_config):
 								type='number',
 								min=1, 
 								step=1, 
-								value=job_config.maxEvaluationJobs,
+								value=job_config.get('maxEvaluationJobs', defaults['maxEvaluationJobs']),
 								required=True,
 								persistence=True,
 								persistence_type="memory"
@@ -55,7 +72,7 @@ def render_job_config(job_config):
 								type='number',
 								min=0, 
 								step=1, 
-								value=job_config.minUnevaluatedPoints,
+								value=job_config.get('minUnevaluatedPoints', defaults['minUnevaluatedPoints']),
 								required=True,
 								persistence=True,
 								persistence_type="memory"
@@ -68,7 +85,7 @@ def render_job_config(job_config):
 							dbc.Input(
 								className="input-element", 
 								id='trainingDS', 
-								value=job_config.trainingDS,
+								value=job_config.get('trainingDS', defaults['trainingDS']),
 								persistence=True,
 								persistence_type="memory"
 								)
@@ -80,7 +97,7 @@ def render_job_config(job_config):
 							dbc.Input(
 								className="input-element", 
 								id='evaluationOutput', 
-								value=job_config.evaluationOutput,
+								value=job_config.get('evaluationOutput', defaults['evaluationOutput']),
 								persistence=True,
 								persistence_type="memory"
 								)
@@ -92,7 +109,7 @@ def render_job_config(job_config):
 							dbc.Input(
 								className="input-element", 
 								id='customOutDS', 
-								value=job_config.customOutDS,
+								value=job_config.get('customOutDS', defaults['customOutDS']),
 								persistence=True,
 								persistence_type="memory"
 								)
@@ -114,7 +131,7 @@ def render_job_config(job_config):
 								type='number',
 								min=1, 
 								step=1, 
-								value=job_config.maxPoints,
+								value=job_config.get('maxPoints', defaults['maxPoints']),
 								required=True,
 								persistence=True,
 								persistence_type="memory"
@@ -130,7 +147,7 @@ def render_job_config(job_config):
 								type='number',
 								min=1, 
 								step=1, 
-								value=job_config.nPointsPerIteration,
+								value=job_config.get('nPointsPerIteration', defaults['nPointsPerIteration']),
 								required=True,
 								persistence=True,
 								persistence_type="memory",
@@ -143,31 +160,31 @@ def render_job_config(job_config):
 							dbc.Input(
 								className="input-element", 
 								id='evaluationInput', 
-								value=job_config.evaluationInput,
+								value=job_config.get('evaluationInput', defaults['evaluationInput']),
 								persistence=True,
 								persistence_type="memory"
 								)
 							]
 						),
-						html.Div([
-							label_with_info_button("Training data"),
-							# html.Div(className="label", children="Training data: "),
-							dbc.Input(
-								className="input-element", 
-								id='evaluationTrainingData', 
-								value=job_config.evaluationTrainingData,
-								persistence=True,
-								persistence_type="memory"
-								)
-							]
-						),
+						# html.Div([
+						# 	label_with_info_button("Training data"),
+						# 	# html.Div(className="label", children="Training data: "),
+						# 	dbc.Input(
+						# 		className="input-element", 
+						# 		id='evaluationTrainingData', 
+						# 		value=job_config.evaluationTrainingData,
+						# 		persistence=True,
+						# 		persistence_type="memory"
+						# 		)
+						# 	]
+						# ),
 						html.Div([
 							label_with_info_button("Evaluation metrics"),
 							# html.Div(className="label", children="Evaluation metrics: "),
 							dbc.Input(
 								className="input-element", 
 								id='evaluationMetrics', 
-								value=job_config.evaluationMetrics,
+								value=job_config.get('evaluationMetrics', defaults['evaluationMetrics']),
 								persistence=True,
 								persistence_type="memory"
 								)
@@ -186,7 +203,7 @@ def render_job_config(job_config):
 				# html.Div(["Search algorithm: ", dbc.Badge("info", color="dark")]),
 				dcc.Dropdown(
 					id='searchAlgorithm', 
-					value=job_config.searchAlgorithm,
+					value=job_config.get('searchAlgorithm', defaults['searchAlgorithm']),
 					options=[{'label': i, 'value': i} for i in job_config._searchAlgOptions],
 					persistence=True,
 					persistence_type="memory",
@@ -199,7 +216,7 @@ def render_job_config(job_config):
 				# html.Div(className="label", children="Grid sites: "),
 				dcc.Dropdown(
 					id='sites', 
-					value=job_config.sites,
+					value=job_config.get('sites', defaults['sites']),
 					options=[{'label': i, 'value': i} for i in job_config._siteOptions],
 					persistence=True,
 					persistence_type="memory",
@@ -214,7 +231,7 @@ def render_job_config(job_config):
 				dbc.Input(
 					className="input-element", 
 					id='evaluationContainer', 
-					value=job_config.evaluationContainer,
+					value=job_config.get('evaluationContainer', defaults['evaluationContainer']),
 					required=True,
 					persistence=True,
 					persistence_type="memory",
@@ -231,7 +248,7 @@ def render_job_config(job_config):
 					id='evaluationExec', 
 					contentEditable=True,
 					required=True,
-					value=job_config.evaluationExec,
+					value=job_config.get('evaluationExec', defaults['evaluationExec']),
 					persistence=True,
 					persistence_type="memory",
 					style=full_width_style
@@ -244,7 +261,8 @@ def render_job_config(job_config):
 	configurations = html.Div(
 		[
 			short_configurations,
-			long_configurations
+			long_configurations,
+			dcc.Store(id='configuration-memory', data=job_config._conf, storage_type='session')
 		]
 	)
 
@@ -466,6 +484,7 @@ def submission(**kwargs):
 	submission = dbc.Container(
 		children=[
 			tabs,
+			
 			# result,
 			# detail,
 			# alert_job_detail,

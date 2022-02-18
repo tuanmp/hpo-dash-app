@@ -130,6 +130,17 @@ def getDType(instance):
         return "Boolean"
     return None
 
+def decode_id_token(id_token):
+    try:
+        enc = id_token.split('.')[1]
+        enc += '=' * (-len(enc) % 4)
+        dec = json.loads(base64.urlsafe_b64decode(enc.encode()))
+        return dec
+    except Exception as e:
+        print(e)
+        return None
+        
+
 class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
     def __init__(self, auth_config_url, token_dir=None, log_stream=None, verbose=False):
         self.auth_config_url = auth_config_url
@@ -141,13 +152,94 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
         self.log_stream = log_stream
         self.verbose = verbose
 
-    def my_run_device_authorization_flow(self):
-        s, o, dec = self.check_token()
+    def check_token(self, data={}):
+        if self.verbose:
+            self.log_stream.debug("Checking token")
+        try:
+            dec = decode_id_token(data['id_token'])
+            exp_time = datetime.datetime.utcfromtimestamp(dec['exp'])
+            delta = exp_time - datetime.datetime.utcnow()
+            if self.verbose:
+                        self.log_stream.debug('token expiration time : {0} UTC'.\
+                                              format(exp_time.strftime("%Y-%m-%d %H:%M:%S")))
+            # check expiration time
+            if delta < datetime.timedelta(minutes=5):
+                # return refresh token
+                if 'refresh_token' in data:
+                    if self.verbose:
+                        self.log_stream.debug('to refresh token')
+                    return False, data, dec
+            else:
+                # return valid token
+                if self.verbose:
+                    self.log_stream.debug('valid token is available')
+                return True, data, dec
+        except Exception as e:
+            self.log_stream.error('failed to decode cached token with {0}'.format(e))
+        if self.verbose:
+            self.log_stream.debug('cached token unavailable')
+        return False, {}, None
+      
+    def fetch_page(self, url):
+        # path = os.path.join(self.token_dir, CACHE_PREFIX + str(uuid.uuid5(uuid.NAMESPACE_URL, str(url))))
+        # if os.path.exists(path) and \
+        #         datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(path)) < \
+        #         datetime.timedelta(hours=1):
+        #     try:
+        #         with open(path) as f:
+        #             return True, json.load(f)
+        #     except Exception as e:
+        #         self.log_stream.debug('cached {0} is corrupted: {1}'.format(os.path.basename(url), str(e)))
+        if self.verbose:
+            self.log_stream.debug('fetching {0}'.format(url))
+        try:
+            context = ssl._create_unverified_context()
+            conn = urlopen(url, context=context)
+            text = conn.read().decode()
+            if self.verbose:
+                self.log_stream.debug(text)
+            # with open(path, 'w') as f:
+            #     f.write(text)
+            # with open(path) as f:
+            return True, json.loads(text)
+        except HTTPError as e:
+            return False, 'code={0}. reason={1}. description={2}'.format(e.code, e.reason, e.read())
+        except Exception as e:
+            return False, str(e)
+
+    def refresh_token(self, token_endpoint, client_id, client_secret, refresh_token_string):
+        if self.verbose:
+            self.log_stream.debug('refreshing token')
+        data = {'client_id': client_id,
+                'client_secret': client_secret,
+                'grant_type': 'refresh_token',
+                'refresh_token': refresh_token_string}
+        rdata = urlencode(data).encode()
+        req = Request(token_endpoint, rdata)
+        req.add_header('content-type', 'application/x-www-form-urlencoded')
+        try:
+            conn = urlopen(req)
+            text = conn.read()
+            if self.verbose:
+                self.log_stream.debug(text)
+            # id_token = json.loads(text)['id_token']
+            # with open(self.get_token_path(), 'w') as f:
+            #     f.write(text)
+            return True, json.loads(text)
+        except HTTPError as e:
+            return False, 'code={0}. reason={1}. description={2}'.format(e.code, e.reason, e.read())
+        except Exception as e:
+            return False, str(e)
+
+
+    def run_device_authorization_flow(self, data):
+        self.log_stream.info('Getting custom token id')
+        s, o, dec = self.check_token(data)
         if s:
             # still valid
             print('still valid')
-            return True, o, True
-        refresh_token_string = o
+            return True, o, False
+        refresh_token_string = o.get('refresh_token')
         # get auth config
         s, o = self.fetch_page(self.auth_config_url)
         if not s:
@@ -166,7 +258,7 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
             # refreshed
             if s:
                 print('token refreshed')
-                return True, o, True
+                return True, o, False
             else:
                 if self.verbose:
                     self.log_stream.debug('failed to refresh token: {0}'.format(o))
@@ -186,23 +278,45 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
         o['token_endpoint'] = endpoint_config['token_endpoint']
         o['client_id'] = auth_config['client_id']
         o['client_secret'] = auth_config['client_secret']
+        for key, value in endpoint_config.items():
+            o[key]=value
+        for key, value in auth_config.items():
+            o[key]=value
         # s, o = self.get_id_token(endpoint_config['token_endpoint'], auth_config['client_id'],
         #                          auth_config['client_secret'], o['device_code'], interval, o['expires_in'])
         # if not s:
         #     return False, "Failed to get ID token: " + o
         # self.log_stream.info('All set')
-        return True, o, False
-    
+        return True, o, True
+
+    def run_refresh_token_flow(self, refresh_token_string=None):
+        s, o = self.fetch_page(self.auth_config_url)
+        if not s:
+            self.log_stream.error(f"Cannot fetch from authorization config url {self.auth_config_url}\n output {o}")
+            return False, "Failed to get Auth configuration: " + o
+        auth_config = o
+        # get endpoint config
+        s, o = self.fetch_page(auth_config['oidc_config_url'])
+        if not s:
+            self.log_stream.error(f"Cannot fetch from OIDC config url {auth_config['oidc_config_url']}\n output {o}")
+            return False, "Failed to get endpoint configuration: " + o
+        endpoint_config = o
+        # refresh token
+        if refresh_token_string is not None:
+            s, o = self.refresh_token(endpoint_config['token_endpoint'], auth_config['client_id'],
+                                 auth_config['client_secret'], refresh_token_string)
+            # refreshed
+            if s:
+                print('token refreshed')
+                return True, o
+            else:
+                if self.verbose:
+                    self.log_stream.debug('failed to refresh token: {0}'.format(o))
+                return False, o
+        return False, o              
+
     def get_id_token(self, token_endpoint, client_id, client_secret, device_code, interval, expires_in):
-        # self.log_stream.info('Ready to get ID token?')
-        # while True:
-        #     sys.stdout.write("[y/n] \n")
-        #     choice = raw_input().lower()
-        #     if choice == 'y':
-        #         break
-        #     elif choice == 'n':
-        #         return False, "aborted"
-        import datetime
+
         if self.verbose:
             self.log_stream.debug('getting ID token')
         startTime = datetime.datetime.utcnow()
@@ -218,11 +332,11 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
                 conn = urlopen(req)
                 text = conn.read().decode()
                 if self.verbose:
-                    self.log_stream.debug(text)
+                    self.log_stream.info(text)
                 id_token = json.loads(text)['id_token']
-                with open(self.get_token_path(), 'w') as f:
-                    f.write(text)
-                return True, id_token
+                # with open(self.get_token_path(), 'w') as f:
+                #     f.write(text)
+                return True, json.loads(text)
             except HTTPError as e:
                 text = e.read()
                 try:
@@ -241,7 +355,7 @@ class my_Curl(_Curl):
     def __init__(self):
         super().__init__()
 
-    def get_my_oidc(self, tmp_log, verbose=False):
+    def get_oidc(self, tmp_log, verbose=False):
         parsed = urlparse(baseURLSSL)
         if parsed.port:
             auth_url = '{0}://{1}:{2}/auth/{3}_auth_config.json'.format(parsed.scheme, parsed.hostname, parsed.port,

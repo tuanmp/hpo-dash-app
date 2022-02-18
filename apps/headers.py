@@ -19,20 +19,58 @@ def header(app_title="PANDA Hyperparameter Optimization"):
                     ),
                 ]
             ),
-            dbc.NavbarToggler(id='navbar-toggler'),
-            dbc.NavLink( 
-                "Monitoring",
-                href='/monitor'
+            # dbc.NavbarToggler(id='navbar-toggler'),
+            html.Ul(
+                [
+                    html.Li(
+                        html.A(
+                            "Monitoring",
+                            href='/monitor',
+                            className="nav-link"
+                        ),
+                        className='nav-item'
+                    ),
+                    html.Li(
+                        html.A(
+                            "Submission",
+                            href='/submission',
+                            className="nav-link"
+                        ),
+                        className='nav-item'
+                    ),
+                    html.Li(
+                        html.A(
+                            "Development",
+                            href='/develop',
+                            className="nav-link"
+                        ),
+                        className='nav-item'
+                    ),
+                    html.Li(
+                        html.A(
+                            "Login",
+                            id='profile-button',
+                            className="nav-link",
+                            href="#"
+                        ),
+                        className='nav-item'
+                    )
+                ],
+                className='navbar-nav'
             ),
-            dbc.NavLink( 
-                "Submission",
-                href='/submission'
+            dbc.Offcanvas(
+                children=[
+                    dbc.Button("Sign in with CERN SSO", color='success', href="#", target="_blank", id="authentication-button")
+                ],
+                is_open=False,
+                id="authentication-button-container", 
+                keyboard=True,
+                placement="end",
             ),
-            dbc.NavLink( 
-                "Development",
-                href='/develop'
-            )
+            dcc.Store(storage_type='session', id='session-storage', data={})
         ],
-        light=True,
+        dark=True,
+        light=False,
+        color="primary",
         sticky='top'
     )

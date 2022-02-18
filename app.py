@@ -5,6 +5,7 @@ from dash import dcc
 from dash import html
 from dash import dash_table
 from dash import callback_context
+from dash.exceptions import PreventUpdate
 import pandas as pd
 from dash.dependencies import Input, Output, State, MATCH
 import plotly.express as px
@@ -14,23 +15,36 @@ from apps.monitor import monitor
 from apps.homepage import homepage
 from apps.develop import develop
 from apps.footer import footer
+from apps.login import login
 from apps.components.utils import check_set, my_OpenIdConnect_Utils, my_Curl
 import dash_bootstrap_components as dbc
 from apps.components.TaskRetriever import Retriever
 from apps.components.SearchSpace import Hyperparameter
 from apps.components.Phpo import Phpo 
-from apps.components.utils import get_index, getMethod
+from apps.components.utils import get_index, getMethod, decode_id_token
 import time
-import json, yaml, base64
+import json, yaml, base64, datetime
 import re
 import uuid 
 from pandaclient import PLogger
 # from queue import Queue, Empty
 # from threading import Thread
 
-external_stylesheets = [dbc.themes.BOOTSTRAP]
+external_stylesheets=[dbc.themes.LUX]
 
-app = dash.Dash(__name__, external_stylesheets=external_stylesheets, suppress_callback_exceptions=True)
+dev_token = {
+# 	'access_token': 'eyJraWQiOiJyc2ExIiwiYWxnIjoiUlMyNTYifQ.eyJzdWIiOiI0ZTkyMzgyZi03MDJmLTQ5MTktYTUzMy05ZjhmZTdiZjY5Y2YiLCJpc3MiOiJodHRwczpcL1wvYXRsYXMtYXV0aC53ZWIuY2Vybi5jaFwvIiwiZXhwIjoxNjQ0NzIzMjQxLCJpYXQiOjE2NDQ3MTk2NDEsImp0aSI6ImFmNmJjMzY4LTRmOTEtNDgyMC1iMmUwLWRiM2ZhZDNiMDk5YSIsImNsaWVudF9pZCI6ImRhMWViNjVmLTc2ZTItNDk1My1hNTAzLWJiNDZlMmEyODFkMyJ9.DY8FjNtoJc1fSfWcSltvUrZln2mgPP-8u_GuQWnCr6Zkjbqf6ucLo-xfYVSvd_2m0929vsh6SjEAOy94KKh1XamVcw_xMsCoGjmYmVaQiKHZ_lMIFjcyL40Ki2N7PEp2jFrYgwEcFjJ_KcZFOzi6wzcvo5g57mTPmffH65_7Ebo',
+#  'expires_in': 3599,
+#  'id_token': 'eyJraWQiOiJyc2ExIiwiYWxnIjoiUlMyNTYifQ.eyJzdWIiOiI0ZTkyMzgyZi03MDJmLTQ5MTktYTUzMy05ZjhmZTdiZjY5Y2YiLCJhdWQiOiJkYTFlYjY1Zi03NmUyLTQ5NTMtYTUwMy1iYjQ2ZTJhMjgxZDMiLCJraWQiOiJyc2ExIiwiaXNzIjoiaHR0cHM6XC9cL2F0bGFzLWF1dGgud2ViLmNlcm4uY2hcLyIsIm5hbWUiOiJUVUFOIE1JTkggUEhBTSIsImdyb3VwcyI6WyJhdGxhcyJdLCJwcmVmZXJyZWRfdXNlcm5hbWUiOiJ0dXBoYW0iLCJvcmdhbmlzYXRpb25fbmFtZSI6ImF0bGFzIiwiZXhwIjoxNjQ0NzIwMjQxLCJpYXQiOjE2NDQ3MTk2NDEsImp0aSI6IjBhZDVjZGNhLTUxN2QtNDc5Zi05ZTljLTZlNDRkMDk2ZjFjOCIsImVtYWlsIjoidHVhbi5taW5oLnBoYW1AY2Vybi5jaCJ9.JJBptVyjQ253uWhhbICrOBIrorA4_0_50wcTM_QCjOEktwoijuNCFw87z4198NhsdCU_GYwWsMJjt6rBQX5WxESjAFFbzdCTxzvu6Z_Yqi7kVTjHQC2oP5o1Lk1Ksg_K-Dncd1uPHaSkB5i3UO7WEzQrSDVCEUsC4Y-65BSsOjE',
+#  'refresh_token': 'eyJhbGciOiJub25lIn0.eyJqdGkiOiI4NTc0M2U4Ny1kM2UxLTQwNzMtYTBkNi0zNzczY2I3ODA2YjcifQ.',
+#  'scope': 'email openid offline_access profile',
+#  'token_type': 'Bearer'
+ }
+
+app = dash.Dash(__name__, 
+				external_stylesheets=external_stylesheets, 
+				suppress_callback_exceptions=True)
+
 server = app.server
 app.title='hpogui'
 
@@ -39,6 +53,7 @@ application = app.server
 app.layout = html.Div(
 	[
 		dcc.Location(id='url', refresh=False),
+		dcc.Store(id='local-storage', storage_type='local', data=dev_token),
 		html.Link(href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.0.3/css/font-awesome.css", rel="stylesheet"),
 		# html.Link(href="https://codepen.io/rmarren1/pen/mLqGRg.css", rel="stylesheet"),
 		header(),
@@ -57,34 +72,91 @@ index=len(hyperparameters)+len(search_space)
 authorization_output = {}
 uid = uuid.uuid4()
 info = ' (marked for removal)'
+                                    
 with open('apps/messages.json') as f:
 	messages = json.load(f)
 
 def enqueue_output(out, queue):
-    for line in iter(out.readline, b''):
-        queue.put(line)
-    out.close()
+	for line in iter(out.readline, b''):
+		queue.put(line)
+	out.close()
 
 
 def getOutput(outQueue):
-    outStr = ''
-    try:
-        while True: # Adds output from the Queue until it is empty
-            outStr+=outQueue.get_nowait()
+	outStr = ''
+	try:
+		while True: # Adds output from the Queue until it is empty
+			outStr+=outQueue.get_nowait()
 
-    except Empty:
-        return outStr
+	except Empty:
+		return outStr
 
 @app.callback(
 	Output('app-page-content', 'children'),
+	# Output('profile-button', 'label'),
+	# Output('profile-button', 'children'),
+	# Output('user-credentials', 'data'),
 	Input('url', 'hash'),
 	Input('url', 'pathname'),
-	State('app-page-content', 'children'),
+	# Input('user-credentials-container', 'children'),
+	# State('app-page-content', 'children'),
+	State('local-storage', 'data'),
+	# State('profile-button', 'label'),
+	# State('profile-button', 'children'),
 )
-def navigate(hash, pathname, page_content):
-	print(pathname)
+def navigate(hash, pathname, data):
+	# profile_button_children = []
+	# curl = my_Curl()
+	# oidc = curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
+	# status, token, dec = oidc.check_token(data)
+	# trigger=callback_context.triggered[0]['prop_id']
+	# if "user-credentials-container" in trigger:
+	# 	return page_content, json.loads(credentials), label, profile_content
+	# if pathname!='/login':
+	# 	if status:
+	# 		# exp_time = datetime.datetime.utcfromtimestamp(dec['exp'])
+	# 		# delta = exp_time - datetime.datetime.utcnow()
+	# 		# profile_button_children.append(
+	# 		# 	dbc.DropdownMenuItem(f'Token expires in {delta}', header=True)
+	# 		# )
+	# 		pass
+	# 	elif isinstance(token, dict) and 'refresh_token' in token:
+	# 		try:
+	# 			refresh_token_string = token.get('refresh_token')
+	# 			s, o = oidc.fetch_page(oidc.auth_config_url)
+	# 			if not s:
+	# 				print(f'Cannot fetch {oidc.auth_config_url}')
+	# 			auth_config = o
+	# 			s, o = oidc.fetch_page(auth_config['oidc_config_url'])
+	# 			if not s:
+	# 				print(f"Cannot fetch {auth_config['oidc_config_url']}")
+	# 				return data
+	# 			endpoint_config = o
+	# 			if refresh_token_string is not None:
+	# 				oidc.log_stream.info('Refreshing token')
+	# 				s, o = oidc.refresh_token(endpoint_config['token_endpoint'], auth_config['client_id'], auth_config['client_secret'], refresh_token_string)
+	# 				# refreshed
+	# 				if s:
+	# 					oidc.log_stream.info('token refreshed')
+	# 					for key, value in o.items():
+	# 						data[key] = value
+	# 				else:
+	# 					if oidc.verbose:
+	# 						oidc.log_stream.debug('failed to refresh token: {0}'.format(o))
+	# 		except Exception as e:
+	# 			print(e)
+	# 	else:
+	# 		s, data, _ = oidc.run_device_authorization_flow(data)
+	# 		data['expires_at']=datetime.datetime.utcnow() + datetime.timedelta(seconds=data['expires_in'])
+	# 		profile_button_children.append(
+	# 			dbc.DropdownMenuItem(f'Sign in', id='authenticate-button', href="/login"),
+	# 		)
+	# try:
+	# 	label = dec['preferred_username']
+	# except:
+	# 	label = 'Login'
 	if pathname=='/home':
-		return homepage()   
+		return homepage()
 	elif pathname=='/submission':
 		global task
 		task=Phpo()
@@ -98,12 +170,169 @@ def navigate(hash, pathname, page_content):
 		index=len(hyperparameters)+len(search_space)
 		if len(hyperparameters)==0:
 			hyperparameters[0]=Hyperparameter(index=0)
-		return submission(config=job_config, hyperparameters=hyperparameters, search_space=search_space)
+		return submission(config=job_config, hyperparameters=hyperparameters, search_space=search_space), label, profile_button_children, data
 	elif pathname=='/monitor':
 		return monitor()
 	elif pathname=='/develop':
 		return develop(uid)
+	# elif pathname=='/login':
+	# 	if "verification_uri_complete" not in data:
+	# 		raise PreventUpdate()
+	# 	return login(verification_uri_complete=data['verification_uri_complete']), label, []
 	return homepage()
+
+@app.callback(
+	Output("authentication-button-container", "is_open"),
+	Output("session-storage", 'data'),
+	Output('authentication-button', 'href'),
+	Input("profile-button", "n_clicks"),
+	State("authentication-button-container", "is_open"),
+	State('local-storage', 'data'),
+	prevent_initial_call=True
+)
+def toggle_authentication_button(signal, is_open, data):
+	if is_open:
+		raise PreventUpdate()
+	curl = my_Curl()
+	oidc = curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
+	status, token_detail, dec = oidc.check_token(data)
+	if status:
+		return False, {"token_valid": True, "refreshing": False, 'authenticating': False, "token": token_detail}, '#'
+	elif token_detail.get('refresh_token') is not None:
+		s, o = oidc.run_refresh_token_flow(token_detail.get('refresh_token'))
+		print(s,o)
+		if s:
+			return False, {"token_valid": True, "refreshing": True, 'authenticating': False, "token": o}, '#'
+	s, o, _ = oidc.run_device_authorization_flow(data)
+	if s:
+		return True,  {"token_valid": False, "refreshing": False, 'authenticating': True, "authentication_output": o}, o.get('verification_uri_complete', '#')
+	return False, {"token_valid": False, "refreshing": False, 'authenticating': False, "authentication_output": o}, '#'
+
+
+@app.callback(
+	Output('local-storage', 'data'),
+	Input("session-storage", 'data'),
+	Input('authentication-button', 'n_clicks'),
+	prevent_initial_call=True
+)
+def update_id_token(data, signal):
+	trigger=callback_context.triggered[0]['prop_id']
+	if "session-storage" in trigger:
+		if data['token_valid'] and data['refreshing']:
+			return data['token']
+		else:
+			raise PreventUpdate()
+	elif data['authenticating']:
+		oidc=my_Curl().get_oidc(PLogger.getPandaLogger(), verbose=True)
+		authentication_output=data['authentication_output']
+		if not all( [key in authentication_output for key in ['token_endpoint', 'client_id', 'client_secret', 'device_code', 'expires_in']]):
+			raise PreventUpdate()
+		s, o = oidc.get_id_token(
+			authentication_output['token_endpoint'],
+			authentication_output['client_id'],
+			authentication_output['client_secret'],
+			authentication_output['device_code'],
+			5,
+			authentication_output['expires_in']
+		)
+		if not s:
+			raise PreventUpdate()
+		return o
+
+
+# @app.callback(
+# 	Output('user-credentials-container', 'children'),
+# 	Input('login-button', 'n_clicks'),
+# 	State('user-credentials', 'data'),
+# 	prevent_initial_call=True
+# )
+# def authenticate(signal, data):
+# 	print("Getting ID token")
+# 	curl=my_Curl()
+# 	oidc = curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
+# 	if not all([element in data for element in ['token_endpoint', 'client_id', 'client_secret', 'device_code', 'expires_in']]):
+# 		oidc.log_stream.error('Not enough elements to obtain token')
+# 		raise PreventUpdate()
+# 	s, o = oidc.get_id_token(
+# 		data['token_endpoint'],
+# 		data['client_id'],
+# 		data['client_secret'],
+# 		data['device_code'],
+# 		5, 
+# 		data['expires_in']
+# 	)
+# 	if not s:
+# 		oidc.log_stream.error(f"Cannot obtain token. Error message {o}")
+# 		raise PreventUpdate()
+# 	print(o)
+# 	return f'{o}'
+
+# @app.callback(
+# 	Output('profile-button', 'label'),
+# 	Output('profile-button', 'children'),
+# 	Output('user-credentials', 'data'),
+# 	Input('user-credentials', 'data'),
+# 	State('url', 'pathname')
+# )
+# def format_login_button(data, pathname):
+# 	curl=my_Curl()
+# 	oidc= curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
+# 	status, token, dec=oidc.check_token(data)
+# 	label="login"
+# 	children=[]
+	
+# 	if status:
+# 		label = dec['preferred_username']
+# 	else:
+# 		label = 
+
+
+# @app.callback(
+# 	Output('user-credentials', 'data'),
+# 	Input('refresh-button', 'n_clicks'),
+# 	State('user-credentials', 'data'),
+# 	prevent_initial_call=True
+# )
+# def get_token(signal, data):
+# 	trigger = callback_context.triggered[0]['prop_id']
+# 	print(trigger)
+# 	curl = my_Curl()
+# 	oidc = curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
+# 	status, token, dec = oidc.check_token(data)
+# 	if 'refresh-button' in trigger:
+# 		if status:
+# 			oidc.log_stream.info("Token still valid")
+# 			return data
+# 		try:
+# 			refresh_token_string = token.get('refresh_token')
+# 			s, o = oidc.fetch_page(oidc.auth_config_url)
+# 			if not s:
+# 				print(f'Cannot fetch {oidc.auth_config_url}')
+# 				return data
+# 			auth_config = o
+# 			s, o = oidc.fetch_page(auth_config['oidc_config_url'])
+# 			if not s:
+# 				print(f"Cannot fetch {auth_config['oidc_config_url']}")
+# 				return data
+# 			endpoint_config = o
+# 			if refresh_token_string is not None:
+# 				oidc.log_stream.info('Refreshing token')
+# 				s, o = oidc.refresh_token(endpoint_config['token_endpoint'], auth_config['client_id'], auth_config['client_secret'], refresh_token_string)
+# 				# refreshed
+# 				if s:
+# 					oidc.log_stream.info('token refreshed')
+# 					for key, value in o.items():
+# 						data[key] = value
+# 				else:
+# 					if oidc.verbose:
+# 						oidc.log_stream.debug('failed to refresh token: {0}'.format(o))
+# 			return data
+# 		except Exception as e:
+# 			print(e)
+# 			return {}
+# 	else:
+# 		return data
+
 
 @app.callback(
 	Output("taskID-search-alert-header", "children"),
@@ -632,7 +861,7 @@ def load_search_space(content, filename):
 		return "All configurations successfully set.", True, render_job_config(job_config)
 
 curl = my_Curl()
-oidc = curl.get_my_oidc(PLogger.getPandaLogger(), verbose=True)
+oidc = curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
 is_token_valid = False
 
 @app.callback(

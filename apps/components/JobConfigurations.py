@@ -9,39 +9,73 @@ siteOptions = ['ANALY_BNL_GPU_ARC', 'ANALY_OU_OSCER_GPU_TEST', 'ANALY_QMUL_GPU_T
                "ANALY_MANC_GPU_TEST", "ANALY_MWT2_GPU", "ANALY_INFN-T1_GPU", "ANALY_SLAC_GPU", "ANALY_CERN-PTEST"]
 searchAlgorithmOptions = sorted(
     ['hyperopt', 'skopt', 'bohb', 'ax', 'tune', 'random', 'bayesian', 'nevergrad'])
-steeringExecTemplate = 'run --rm -v "$(pwd)":/HPOiDDS #STEERINGCONTAINER /bin/bash -c "hpogrid generate --n_point=%NUM_POINTS --max_point=%MAX_POINTS --infile=/HPOiDDS/%IN --outfile=/HPOiDDS/%OUT -l=#METHOD"'
+steeringExecTemplate = 'run --rm -v "$(pwd)":/HPOiDDS #STEERINGCONTAINER /bin/bash -c "hpogrid generate --n_point=%NUM_POINTS --max_point=%MAX_POINTS --infile=/HPOiDDS/%IN --outfile=/HPOiDDS/%OUT -l #METHOD"'
 
 
 class JobConfig:
     def __init__(self):
         # general configurations
-        self._nParallelEvaluation = 1
+        self._nParallelEvaluation = 2
         self._maxPoints = 10
         self._maxEvaluationJobs = 2 * self._maxPoints
         # steering configurations
         self._nPointsPerIteration = 2
         self._minUnevaluatedPoints = 0
         self._steeringContainer = "gitlab-registry.cern.ch/zhangruihpc/steeringcontainer:0.0.4"
-        self._searchAlgorithm = searchAlgorithmOptions[0]
+        self._searchAlgorithm = 'nevergrad'
         self._searchSpaceFile = ""
         # evaluation configurations
         self._evaluationContainer = "docker://gitlab-registry.cern.ch/zhangruihpc/evaluationcontainer:mlflow"
         self._evaluationExec = ""
         self._evaluationInput = 'input.json'  #
-        self._evaluationTrainingData = "input_ds.json"
+        # self._evaluationTrainingData = "input_ds.json"
         self._evaluationOutput = "output.json"
-        self._evaluationMeta = ""  #
+        # self._evaluationMeta = ""  #
         self._evaluationMetrics = "metrics.tgz"
         self._trainingDS = ""
-        self._checkPointToSave = ""
-        self._checkPointToLoad = ""  #
-        self._checkPointInterval = 5
-        self._sites = siteOptions[:1]
+        # self._checkPointToSave = ""
+        # self._checkPointToLoad = ""  #
+        # self._checkPointInterval = 5
+        self._sites = ["ANALY_CERN-PTEST"]
         self._customOutDS = ""
         self._uuid = str(MiscUtils.wrappedUuidGen()).upper()
         self._siteOptions = siteOptions
         self._searchAlgOptions = searchAlgorithmOptions
         pass
+
+    def get(self, att, default):
+        try:
+            return self.__getattr__(self, att)
+        except:
+            return default
+        
+    @property
+    def _conf(self):
+        return {
+            "nParallelEvaluation": self.nParallelEvaluation,
+            "maxPoints": self.maxPoints,
+            "maxEvaluationJobs": self.maxEvaluationJobs,
+            "minUnevaluatedPoints": self.minUnevaluatedPoints,
+            "nPointsPerIteration": self.nPointsPerIteration,
+            "searchAlgorithm": self.searchAlgorithm,
+            'evaluationContainer': self.evaluationContainer,
+            'evaluationExec': self.evaluationExec,
+            'evaluationInput': self.evaluationInput, 
+            "evaluationOutput": self.evaluationOutput,
+            'evaluationMetrics': self.evaluationMetrics,
+            'trainingDS': self.trainingDS,
+            'sites': self.sites, 
+            'customOutDS': self.customOutDS,
+            'outDS': self.outDS,
+            'steeringExec': self.steeringExec
+        }
+    
+    @property
+    def config(self):
+        exclude = ['customOutDS', 'steeringExec']
+        return {
+            item: value for item, value in self._conf.items() if (value is not None and value!="" and item not in exclude)
+        }
 
     @property
     def user(self):
@@ -53,7 +87,7 @@ class JobConfig:
 
     @property
     def outDS(self):
-        return "user.{0}{1}.{2}/".format(self.user, ("." + self.customOutDS) if self.customOutDS else "", self.uuid)
+        return "user.{0}{1}.{2}/".format('tupham', ("." + self.customOutDS) if self.customOutDS else "", self.uuid)
 
     @property
     def searchAlgorithm(self):
@@ -186,17 +220,17 @@ class JobConfig:
             raise ValueError(
                 "{} is an invalid value of evaluationInput".format(t))
 
-    @property
-    def evaluationTrainingData(self):
-        return self._evaluationTrainingData
+    # @property
+    # def evaluationTrainingData(self):
+    #     return self._evaluationTrainingData
 
-    @evaluationTrainingData.setter
-    def evaluationTrainingData(self, t):
-        if isinstance(t, str) and t.endswith(".json"):
-            self._evaluationTrainingData = t
-        else:
-            raise ValueError(
-                "{} is an invalid value of evaluationTrainingData".format(t))
+    # @evaluationTrainingData.setter
+    # def evaluationTrainingData(self, t):
+    #     if isinstance(t, str) and t.endswith(".json"):
+    #         self._evaluationTrainingData = t
+    #     else:
+    #         raise ValueError(
+    #             "{} is an invalid value of evaluationTrainingData".format(t))
 
     @property
     def evaluationOutput(self):
@@ -256,41 +290,41 @@ class JobConfig:
         else:
             raise ValueError("{} is an invalid value of customOutDS".format(t))
 
-    @property
-    def checkPointToSave(self):
-        return self._checkPointToSave
+    # @property
+    # def checkPointToSave(self):
+    #     return self._checkPointToSave
 
-    @checkPointToSave.setter
-    def checkPointToSave(self, t):
-        if isinstance(t, str):
-            self._checkPointToSave = t
-        else:
-            raise ValueError(
-                "{} is an invalid value of checkPointToSave".format(t))
+    # @checkPointToSave.setter
+    # def checkPointToSave(self, t):
+    #     if isinstance(t, str):
+    #         self._checkPointToSave = t
+    #     else:
+    #         raise ValueError(
+    #             "{} is an invalid value of checkPointToSave".format(t))
 
-    @property
-    def checkPointToLoad(self):
-        return self._checkPointToLoad
+    # @property
+    # def checkPointToLoad(self):
+    #     return self._checkPointToLoad
 
-    @checkPointToLoad.setter
-    def checkPointToLoad(self, t):
-        if isinstance(t, str):
-            self._checkPointToLoad = t
-        else:
-            raise ValueError(
-                "{} is an invalid value of checkPointToLoad".format(t))
+    # @checkPointToLoad.setter
+    # def checkPointToLoad(self, t):
+    #     if isinstance(t, str):
+    #         self._checkPointToLoad = t
+    #     else:
+    #         raise ValueError(
+    #             "{} is an invalid value of checkPointToLoad".format(t))
 
-    @property
-    def checkPointInterval(self):
-        return self._checkPointInterval
+    # @property
+    # def checkPointInterval(self):
+    #     return self._checkPointInterval
 
-    @checkPointInterval.setter
-    def checkPointInterval(self, n):
-        if isinstance(n, int) and n > 0:
-            self._checkPointInterval = n
-        else:
-            raise TypeError(
-                "{} is an invalid value of checkPointInterval".format(n))
+    # @checkPointInterval.setter
+    # def checkPointInterval(self, n):
+    #     if isinstance(n, int) and n > 0:
+    #         self._checkPointInterval = n
+    #     else:
+    #         raise TypeError(
+    #             "{} is an invalid value of checkPointInterval".format(n))
 
     @property
     def sites(self):

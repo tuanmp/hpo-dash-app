@@ -15,7 +15,6 @@ from apps.monitor import monitor
 from apps.homepage import homepage
 from apps.develop import develop
 from apps.footer import footer
-from apps.login import login
 from apps.components.utils import check_set, my_OpenIdConnect_Utils, my_Curl
 import dash_bootstrap_components as dbc
 from apps.components.TaskRetriever import Retriever
@@ -175,10 +174,6 @@ def navigate(hash, pathname, data):
 		return monitor()
 	elif pathname=='/develop':
 		return develop(uid)
-	# elif pathname=='/login':
-	# 	if "verification_uri_complete" not in data:
-	# 		raise PreventUpdate()
-	# 	return login(verification_uri_complete=data['verification_uri_complete']), label, []
 	return homepage()
 
 @app.callback(

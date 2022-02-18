@@ -8,9 +8,9 @@ function decodeIdToken(idToken) {
     try {
         enc = idToken.split('.')[1];
         enc += '='.repeat(((-enc.length % 4) + 4) % 4);
-        console.log(enc)
+        // console.log(enc)
         dec = JSON.parse(window.atob(enc))
-        console.log(dec)
+        // console.log(dec)
         return dec
     }
     catch (e) {
@@ -27,6 +27,7 @@ window.addEventListener('load', (event) => {
     token = JSON.parse(token);
     
     button = document.getElementById('profile-button');
+    console.log(button)
 
     if (('id_token' in token)) {
         dec = decodeIdToken(token['id_token']);

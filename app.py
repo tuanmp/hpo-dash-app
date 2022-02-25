@@ -626,9 +626,10 @@ def submit(signal, search_space, task_config, token_data, file_location):
 	tmp_dir = file_location.get('tmp_file_location')
 	os.makedirs(tmp_dir, exist_ok=True)
 	uid = tmp_dir.split('/')[-1]
-	token_file = f'.token-{uid}'
+	# token_file = f'.token-{uid}'
 	token_dir = os.environ['PANDA_CONFIG_ROOT']
 	token_dir = os.path.expanduser(token_dir)
+	os.makedirs(token_dir, exist_ok=True)
 	with open(os.path.join(token_dir, '.token'), 'w') as f:
 		print(f'dumping new token at {os.path.join(token_dir, token_file)}')
 		token=json.dumps(token_data)

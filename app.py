@@ -627,6 +627,7 @@ def submit(signal, search_space, task_config, token_data, file_location):
 	os.makedirs(tmp_dir, exist_ok=True)
 	uid = tmp_dir.split('/')[-1]
 	# token_file = f'.token-{uid}'
+	token_file='.token'
 	token_dir = os.environ['PANDA_CONFIG_ROOT']
 	token_dir = os.path.expanduser(token_dir)
 	os.makedirs(token_dir, exist_ok=True)

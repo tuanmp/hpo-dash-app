@@ -1,6 +1,8 @@
 from dash import html, dcc
 import dash_bootstrap_components as dbc
 from apps.components.utils import info_button_style, full_width_style, label_with_info_button
+from apps.components.JobConfigurations import JobConfig
+import uuid
 
 BUTTONS = [
     ("File Upload",  'file_upload'),
@@ -40,7 +42,7 @@ def render_job_config(job_config):
 								type='number',
 								min=1, 
 								step=1, 
-								value=job_config.get('nParallelEvaluation', defaults['nParallelEvaluation']),
+								value=job_config._conf.get('nParallelEvaluation', defaults['nParallelEvaluation']),
 								required=True,
 								persistence=True,
 								persistence_type="memory"
@@ -56,7 +58,7 @@ def render_job_config(job_config):
 								type='number',
 								min=1, 
 								step=1, 
-								value=job_config.get('maxEvaluationJobs', defaults['maxEvaluationJobs']),
+								value=job_config._conf.get('maxEvaluationJobs', defaults['maxEvaluationJobs']),
 								required=True,
 								persistence=True,
 								persistence_type="memory"
@@ -72,20 +74,8 @@ def render_job_config(job_config):
 								type='number',
 								min=0, 
 								step=1, 
-								value=job_config.get('minUnevaluatedPoints', defaults['minUnevaluatedPoints']),
+								value=job_config._conf.get('minUnevaluatedPoints', defaults['minUnevaluatedPoints']),
 								required=True,
-								persistence=True,
-								persistence_type="memory"
-								)
-							]
-						),
-						html.Div([
-							label_with_info_button("Training dataset"),
-							# html.Div(className="label", children="Training dataset: "),
-							dbc.Input(
-								className="input-element", 
-								id='trainingDS', 
-								value=job_config.get('trainingDS', defaults['trainingDS']),
 								persistence=True,
 								persistence_type="memory"
 								)
@@ -97,19 +87,19 @@ def render_job_config(job_config):
 							dbc.Input(
 								className="input-element", 
 								id='evaluationOutput', 
-								value=job_config.get('evaluationOutput', defaults['evaluationOutput']),
+								value=job_config._conf.get('evaluationOutput', defaults['evaluationOutput']),
 								persistence=True,
 								persistence_type="memory"
 								)
 							]
-						),
+						),						
 						html.Div([
 							label_with_info_button("Output dataset name"),
 							# html.Div(className="label", children="Output dataset: "),
 							dbc.Input(
 								className="input-element", 
 								id='customOutDS', 
-								value=job_config.get('customOutDS', defaults['customOutDS']),
+								value=job_config._conf.get('customOutDS', defaults['customOutDS']),
 								persistence=True,
 								persistence_type="memory"
 								)
@@ -131,7 +121,7 @@ def render_job_config(job_config):
 								type='number',
 								min=1, 
 								step=1, 
-								value=job_config.get('maxPoints', defaults['maxPoints']),
+								value=job_config._conf.get('maxPoints', defaults['maxPoints']),
 								required=True,
 								persistence=True,
 								persistence_type="memory"
@@ -147,7 +137,7 @@ def render_job_config(job_config):
 								type='number',
 								min=1, 
 								step=1, 
-								value=job_config.get('nPointsPerIteration', defaults['nPointsPerIteration']),
+								value=job_config._conf.get('nPointsPerIteration', defaults['nPointsPerIteration']),
 								required=True,
 								persistence=True,
 								persistence_type="memory",
@@ -160,7 +150,7 @@ def render_job_config(job_config):
 							dbc.Input(
 								className="input-element", 
 								id='evaluationInput', 
-								value=job_config.get('evaluationInput', defaults['evaluationInput']),
+								value=job_config._conf.get('evaluationInput', defaults['evaluationInput']),
 								persistence=True,
 								persistence_type="memory"
 								)
@@ -184,7 +174,19 @@ def render_job_config(job_config):
 							dbc.Input(
 								className="input-element", 
 								id='evaluationMetrics', 
-								value=job_config.get('evaluationMetrics', defaults['evaluationMetrics']),
+								value=job_config._conf.get('evaluationMetrics', defaults['evaluationMetrics']),
+								persistence=True,
+								persistence_type="memory"
+								)
+							]
+						),
+						html.Div([
+							label_with_info_button("Training dataset"),
+							# html.Div(className="label", children="Training dataset: "),
+							dbc.Input(
+								className="input-element", 
+								id='trainingDS', 
+								value=job_config._conf.get('trainingDS', defaults['trainingDS']),
 								persistence=True,
 								persistence_type="memory"
 								)
@@ -203,7 +205,7 @@ def render_job_config(job_config):
 				# html.Div(["Search algorithm: ", dbc.Badge("info", color="dark")]),
 				dcc.Dropdown(
 					id='searchAlgorithm', 
-					value=job_config.get('searchAlgorithm', defaults['searchAlgorithm']),
+					value=job_config._conf.get('searchAlgorithm', defaults['searchAlgorithm']),
 					options=[{'label': i, 'value': i} for i in job_config._searchAlgOptions],
 					persistence=True,
 					persistence_type="memory",
@@ -216,7 +218,7 @@ def render_job_config(job_config):
 				# html.Div(className="label", children="Grid sites: "),
 				dcc.Dropdown(
 					id='sites', 
-					value=job_config.get('sites', defaults['sites']),
+					value=job_config.sites,
 					options=[{'label': i, 'value': i} for i in job_config._siteOptions],
 					persistence=True,
 					persistence_type="memory",
@@ -231,7 +233,7 @@ def render_job_config(job_config):
 				dbc.Input(
 					className="input-element", 
 					id='evaluationContainer', 
-					value=job_config.get('evaluationContainer', defaults['evaluationContainer']),
+					value=job_config._conf.get('evaluationContainer', defaults['evaluationContainer']),
 					required=True,
 					persistence=True,
 					persistence_type="memory",
@@ -240,7 +242,7 @@ def render_job_config(job_config):
 				]
 			),
 			html.Div([
-				label_with_info_button("Evaluation execution"),
+				label_with_info_button("Evaluation command"),
 				# html.Div(className="label", children="Evaluation execution: "),
 				dcc.Textarea(
 					className="input-element", 
@@ -248,7 +250,7 @@ def render_job_config(job_config):
 					id='evaluationExec', 
 					contentEditable=True,
 					required=True,
-					value=job_config.get('evaluationExec', defaults['evaluationExec']),
+					value=job_config._conf.get('evaluationExec', defaults['evaluationExec']),
 					persistence=True,
 					persistence_type="memory",
 					style=full_width_style
@@ -262,32 +264,94 @@ def render_job_config(job_config):
 		[
 			short_configurations,
 			long_configurations,
-			dcc.Store(id='configuration-memory', data=job_config._conf, storage_type='session')
 		]
 	)
 
 	return configurations
 
 def submission(**kwargs):
-	job_config = kwargs.get('config', {})
+	job_config = kwargs.get('config', JobConfig())
 	hyperparameters = kwargs.get('hyperparameters', {})
 	searchspace = kwargs.get('search_space',{})
+	upload_image_style = {'margin': '1rem'}
 
 	file_upload = html.Div(
 		className = "tab-content",
 		children=[
-			html.Div("Select file: "),
 			dcc.Upload(
-				[
-					'Drag and drop a search space json file or ',
-					dbc.Button("Upload", outline=True, color='primary')
-				], className="upload", id="upload-search-space", filename=[], contents=[], multiple=True
+				dbc.Card(
+					dbc.CardBody(
+						[
+							dbc.Row(html.Img(src='assets/extension-file-format-json-document-file-format-svgrepo-com.svg', height=50, style=upload_image_style), justify='center'),
+							dbc.Row(
+								dbc.Button(
+									"select a search space file",
+									style={
+										'border-radius': '0.5rem',
+										'height': '5rem',
+										'width': '17rem'
+									},
+									color='success'
+								),
+								justify='center'
+							),
+							dbc.Row('or drop one here', justify='center')
+						]
+					)
+				),
+				# className="upload", 
+				id="upload-search-space", 
+				filename="", 
+				contents="", 
+				multiple=False,
+				accept='application/json'
 			),
 			dcc.Upload(
-				[
-					'Drag and drop a configuration json file or ',
-					dbc.Button("Upload", outline=True, color='primary')
-				], className="upload", id="upload-task-conf", filename=[], contents=[], multiple=False
+				dbc.Card(
+					dbc.CardBody(
+						[
+							dbc.Row(html.Img(src='assets/extension-file-format-json-document-file-format-svgrepo-com.svg', height=50, style=upload_image_style), justify='center'),
+							dbc.Row(
+								dbc.Button(
+									"select a configuration file",
+									style={
+										'border-radius': '0.5rem',
+										'height': '5rem',
+										'width': '17rem'
+									},
+									color='info'
+								),
+								justify='center'
+							),
+							dbc.Row('or drop one here', justify='center')
+						]
+					)
+				),
+				# className="upload", 
+				id="upload-task-conf", 
+				filename="", 
+				contents="", 
+				multiple=False, 
+				accept='application/json'
+			),
+			dcc.Upload(
+				dbc.Card(dbc.CardBody([
+					dbc.Row(html.Img(src='assets/file-svgrepo-com.svg', height=50, style=upload_image_style), justify='center'),
+					dbc.Row(
+						dbc.Button(
+							"select additional files",
+							style={
+								'border-radius': '0.5rem',
+								'height': '5rem',
+								'width': '17rem'
+							},
+							color='dark'
+						),
+						justify='center'
+					),
+					dbc.Row('or drop files here', justify='center')
+				])),
+				className="upload", id="upload-additional-file", filename=[], contents=[], multiple=True
 			),
 			dbc.Offcanvas(
 				html.P("Some offcanvas content..."),
@@ -301,35 +365,50 @@ def submission(**kwargs):
 				title="Task configurations loaded...",
 				is_open=False,
 			),
+			dcc.Store(id='additional-file-storage', storage_type='local', data={"tmp_file_location": f'tmp/{uuid.uuid4()}'}),
 		]
 	)
 
 	search_space = dbc.Container(
 		[
 			dbc.Row(
-				[
-					dbc.Col(
+				dbc.Card(
+					dbc.CardBody(
 						[
-							hyperparameter.render() for hyperparameter in hyperparameters.values()
-							# dbc.Button('Save Hyperparameter', id='save-button')
-						],
-						id='search-space-board',
-						width=6
-					),
-					dbc.Col(
-						[
-							dbc.Accordion(
-								[hp.display_search_space_element() for hp in searchspace.values()],
-								flush=False,
-								id='saved-search-space',
-								start_collapsed=True,
-							),
-							dbc.Button('Add', id='add-button'),
-						],
-						id='display-saved-hps',
-						width=6
+							# html.P("Input a hyperparameter name and click on ADD"),
+							dbc.InputGroup(
+								[
+									dbc.Input(type='text', id='name-input', placeholder='Input a name to add a hyperparameter'),
+									dbc.Button(
+										html.Img(
+											src='assets/add-svgrepo-com.svg', 
+											height=30, 
+											style={'margin': '0 rem'}
+										), 
+									id="add-button", 
+									color='info', 
+									outline=True, 
+									# style={'border-radius': '0.5rem'}
+									)
+								]
+							)
+								
+						]
 					)
-				]	
+				)
+			),
+
+			dbc.Row(
+				dbc.Card(
+					dbc.CardBody(
+						dbc.Row(
+							[
+
+							],
+							id='search-space-board',
+						)
+					)
+				)
 			)
 		]
 	)
@@ -380,7 +459,8 @@ def submission(**kwargs):
         children=[
             file_upload,
 			# dbc.Button('Save', id={'type': 'save-button', 'index':'1'}),
-			dbc.Button('Next', id={'type': 'next-button', 'index':'1'})
+			dbc.Button('Next', id={'type': 'next-button', 'index':'1'}),
+			dcc.Store(id='task-configuration-storage', storage_type='memory', data=JobConfig().config),
         ]
 	)
 
@@ -390,8 +470,10 @@ def submission(**kwargs):
             search_space,
 			dbc.Button('Back', id={'type': 'back-button', 'index':'2'}),
 			# dbc.Button('Save', id={'type': 'save-button', 'index':'2'}),
-			dbc.Button('Save', id='save-button'),
-			dbc.Button('Next', id={'type': 'next-button', 'index':'2'})
+			# dbc.Button('Save', id='save-button'),
+			dbc.Button('Next', id={'type': 'next-button', 'index':'2'}),
+			dcc.Store(id='search-space-storage', storage_type='memory', data={}),
+			dcc.Store(id='hyperparameter-storage', storage_type='memory', data={}),
             # dcc.Loading(children=dbc.Button("Search", id="criteria-search-button"), fullscreen=True),
         ]
 	)
@@ -419,9 +501,38 @@ def submission(**kwargs):
         children=[
             review,
 			dbc.Button('Back', id={'type': 'back-button', 'index':'4'}),
-			dbc.Button("Submit", id="task-submit-button"),
-			html.A('Click here to open OIDC Auth', href="#", hidden=True, className='btn btn-outline-primary', target='_blank', id="oidc-auth-window"),
-			dbc.Button('Continue', id="task-submit-continue-after-auth-button")
+			dbc.Button('Verify task', id='task-verification'),
+			dbc.Modal(
+				[
+					dbc.ModalHeader(
+						dbc.ModalTitle(id='task-submission-alert-title')
+					),
+					dbc.ModalBody(
+						id='task-submission-alert-body'
+					), 
+					dbc.ModalFooter(
+						html.Div(dbc.Button("Submit", id="task-submit-button"), id='task-submit-button-container', hidden=True, style={'justify': 'center'}),
+					)
+				],
+				scrollable=True,
+				id='task-submission-alert',
+				is_open=False,
+			),
+			dbc.Modal(
+				[
+					dbc.ModalHeader(
+						dbc.ModalTitle(id='submission-status-alert-title')
+					),
+					dbc.ModalBody(
+						id='submission-status-alert-body'
+					)
+				],
+				scrollable=True,
+				id='submission-status-alert',
+				is_open=False,
+			)
+			# html.A('Click here to open OIDC Auth', href="#", hidden=True, className='btn btn-outline-primary', target='_blank', id="oidc-auth-window"),
+			# dbc.Button('Continue', id="task-submit-continue-after-auth-button")
             # dcc.Loading(children=dbc.Button("Search", id="criteria-search-button"), fullscreen=True),
         ]
 	)
@@ -437,7 +548,7 @@ def submission(**kwargs):
 		],
 		persistence=True,
 		persistence_type="memory", 
-		value='3'
+		value='1'
 	)
 
 	# result = html.Div(

@@ -2,20 +2,98 @@ import copy
 import json
 import os
 import re
-
+import shutil
+import stat
+import ssl
 import yaml
 from pandaclient import (Client, MiscUtils, PandaToolsPkgInfo, PLogger,
 						 PsubUtils)
 
 from .JobConfigurations import JobConfig
 from .SearchSpace import Hyperparameter
-from .utils import taskAttributes, get_index, getMethod
+from .utils import taskAttributes, get_index, getMethod, my_Curl, my_OpenIdConnect_Utils, modified_Curl
+from pandaclient.MiscUtils import commands_get_status_output, commands_get_output, pickle_loads
+from pandaclient.Client import setCacheServer, _x509
+
+import socket
+import random
+import tempfile
+import os
+import re
+import sys
+import ssl
+import stat
+import json
+import gzip
+import string
+import traceback
+
 
 tmpLog = PLogger.getPandaLogger()
 
+try:
+	from urllib import urlencode, unquote_plus
+	from urlparse import urlparse
+	from urllib2 import urlopen, Request, HTTPError
+except ImportError:
+	from urllib.parse import urlencode, unquote_plus, urlparse
+	from urllib.request import urlopen, Request
+	from urllib.error import HTTPError
+import struct
+try:
+	import cPickle as pickle
+except ImportError:
+	import pickle
+import socket
+import random
+import tempfile
+
+try:
+	baseURL = os.environ['PANDA_URL']
+except Exception:
+	baseURL = 'http://pandaserver.cern.ch:25080/server/panda'
+try:
+	baseURLSSL = os.environ['PANDA_URL_SSL']
+except Exception:
+	baseURLSSL = 'https://pandaserver.cern.ch/server/panda'
+
+baseURLCSRVSSL = "https://pandacache.cern.ch/server/panda"
+
+# exit code
+EC_Failed = 255
+
+# limit on maxCpuCount
+maxCpuCountLimit = 1000000000
+
+# resolve panda cache server's name
+netloc = urlparse(baseURLCSRVSSL)
+tmp_host = socket.getfqdn(random.choice(socket.getaddrinfo(netloc.hostname, netloc.port))[-1][0])
+if netloc.port:
+	baseURLCSRVSSL = '%s://%s:%s%s' % (netloc.scheme, tmp_host, netloc.port, netloc.path)
+else:
+	baseURLCSRVSSL = '%s://%s%s' % (netloc.scheme, tmp_host, netloc.path)
+
+
+
+def dump_log(func_name, exception_obj, output):
+	print(traceback.format_exc())
+	print(output)
+	err_str = "{} failed : {}".format(func_name, str(exception_obj))
+	tmp_log = PLogger.getPandaLogger()
+	tmp_log.error(err_str)
+	return err_str
+
+def str_decode(data):
+	if hasattr(data, 'decode'):
+		try:
+			return data.decode()
+		except Exception:
+			return data.decode('utf-8')
+	return data
+
 
 class Phpo:
-	def __init__(self, job_config=None):
+	def __init__(self, job_config=None, tmp_dir=None, verbose=False, id_token="", token_file='.token'):
 		self.JobConfig = job_config or JobConfig()
 		self.HyperParameters = {}
 		self._alrbArgs = None
@@ -26,6 +104,11 @@ class Phpo:
 		self._voms = None
 		self._intrSrv = False
 		self._official = False
+		self.tmp_dir=tmp_dir
+		self.verbose=verbose
+		self.token_path = f'{tmp_dir}/.token'
+		self.id_token=id_token
+		self.token_file=token_file
 		pass
 
 	@property
@@ -36,61 +119,60 @@ class Phpo:
 	def execStrTemplate(self):
 		return 'phpo'
 
-	# def _setup(self):
-	# 	panda_jupyter.setup()
-	# 	return
+	# @property
+	# def ExecStr(self):
+	# 	config = self.JobConfig._conf
+	# 	execStr = self.execStrTemplate
+	# 	for att in taskAttributes:
+	# 		val = getattr(config, att)
+	# 		if att in ["evaluationExec", 'evaluationContainer', 'steeringExec']:
+	# 			if not val:
+	# 				tmpLog.error(
+	# 					'--{0} is not specified. Setting to a dummy value.'.format(att.replace("_", "")))
+	# 		if val == None or val == "":
+	# 			continue
+	# 		# if att == "outDS":
+	# 		# 	nickName = PsubUtils.getNickname()
+	# 		# 	if not PsubUtils.checkOutDsName(outDS=val, official=self._official, nickName=nickName, verbose=True):
+	# 		# 		tmpLog.exception("Invalid outDS name: %s" % val)
+	# 		if att == "site":
+	# 			val = ",".join(val)
+	# 		if isinstance(val, bool):
+	# 			if val is True:
+	# 				execStr += ' --{0}'.format(att)
+	# 		else:
+	# 			execStr += " --{0}={1}".format(att, val)
+	# 	return execStr
 
-	@property
-	def ExecStr(self):
-		config = self.JobConfig
-		execStr = self.execStrTemplate
-		for att in taskAttributes:
-			val = getattr(config, att)
-			if att in ["evaluationExec", 'evaluationContainer', 'steeringExec']:
-				if not val:
-					tmpLog.error(
-						'--{0} is not specified. Setting to a dummy value.'.format(att.replace("_", "")))
-			if val == None or val == "":
-				continue
-			if att == "outDS":
-				nickName = PsubUtils.getNickname()
-				if not PsubUtils.checkOutDsName(outDS=val, official=self._official, nickName=nickName, verbose=True):
-					tmpLog.exception("Invalid outDS name: %s" % val)
-			if att == "site":
-				val = ",".join(val)
-			if isinstance(val, bool):
-				if val is True:
-					execStr += ' --{0}'.format(att)
-			else:
-				execStr += " --{0}={1}".format(att, val)
-		return execStr
 
-	def _makeSandbox(self, verbose=False, files_from="."):
+	def _makeSandbox(self):
+		verbose=self.verbose
 		# create tmp dir
 		curDir = os.getcwd()
-		tmpDir = os.path.join(curDir, 'tmp', MiscUtils.wrappedUuidGen())
+		if self.tmp_dir is None:
+			self.tmp_dir=MiscUtils.wrappedUuidGen()
+		tmpDir = os.path.join(curDir, self.tmp_dir)
 		os.makedirs(tmpDir, exist_ok=True)
 
 		# sandbox
-		if verbose:
+		if self.verbose:
 			tmpLog.debug("=== making sandbox ===")
 		archiveName = 'jobO.%s.tar' % MiscUtils.wrappedUuidGen()
 		archiveFullName = os.path.join(tmpDir, archiveName)
 		extensions = ['json', 'py', 'sh', 'yaml']
 		find_opt = ' -o '.join(['-name "*.{0}"'.format(e) for e in extensions])
+		os.chdir(tmpDir)
 		tmpOut = MiscUtils.commands_get_output(
-			'find {2} {0} | tar cvfz {1} --files-from - '.format(find_opt, archiveFullName, files_from))
+			'find . {0} | tar cvfz {1} --files-from - '.format(find_opt, archiveFullName, tmpDir))
 
-		if verbose:
+		if self.verbose:
 			print(tmpOut + '\n')
 			tmpLog.debug("=== checking sandbox ===")
-			tmpOut = MiscUtils.commands_get_output(
-				'tar tvfz {0}'.format(archiveFullName))
+			tmpOut = MiscUtils.commands_get_output('tar tvfz {0}'.format(archiveFullName))
 			print(tmpOut + '\n')
 			tmpLog.debug("=== uploading sandbox===")
-		os.chdir(tmpDir)
-		status, out = Client.putFile(
-			archiveName, verbose, useCacheSrv=True, reuseSandbox=True)
+		# os.chdir(tmpDir)
+		status, out = self.putFile(archiveName, verbose)
 		os.chdir(curDir)
 		if out.startswith('NewFileName:'):
 			# found the same input sandbox to reuse
@@ -105,6 +187,7 @@ class Phpo:
 		return tmpDir, archiveName, sourceURL
 
 	def taskParams(self, archiveName, sourceURL):
+
 		config = self.JobConfig
 		taskParamMap = {}
 		taskParamMap['noInput'] = True
@@ -123,7 +206,7 @@ class Phpo:
 			PandaToolsPkgInfo.release_version)
 		taskParamMap['prodSourceLabel'] = 'user'
 		taskParamMap['useLocalIO'] = 1
-		taskParamMap['cliParams'] = self.ExecStr
+		taskParamMap['cliParams'] = "fullExecString"
 		taskParamMap['skipScout'] = True
 		taskParamMap['coreCount'] = 1
 		taskParamMap['container_name'] = config.evaluationContainer
@@ -131,7 +214,7 @@ class Phpo:
 		if self._workingGroup is not None:
 			taskParamMap['workingGroup'] = self._workingGroup
 		if len(config.sites) == 1:
-			taskParamMap['site'] = config.sites[0]
+			taskParamMap['site'] = config.site
 		else:
 			taskParamMap['includedSite'] = config.sites
 		taskParamMap['multiStepExec'] = {'preprocess': {'command': '${TRF}',
@@ -150,9 +233,9 @@ class Phpo:
 															  'exit $REAL_MAIN_RET_CODE ',
 															  'containerImage': config.evaluationContainer}
 										 }
-		if config.checkPointToSave:
-			taskParamMap['multiStepExec']['coprocess'] = {'command': '${TRF}',
-														  'args': '--coprocess ${TRF_ARGS}'}
+		# if config.checkPointToSave:
+		# 	taskParamMap['multiStepExec']['coprocess'] = {'command': '${TRF}',
+		# 												  'args': '--coprocess ${TRF_ARGS}'}
 		if self._alrbArgs:
 			taskParamMap['multiStepExec']['containerOptions']['execArgs'] = self._alrbArgs
 
@@ -202,24 +285,24 @@ class Phpo:
 			 'value': '"',
 			 },
 		]
-		if config.checkPointToSave is not None:
-			taskParamMap['jobParameters'] += [
-				{'type': 'constant',
-				 'value': '--checkPointToSave {0}'.format(config.checkPointToSave)
-				 },
-			]
-			if config.checkPointInterval is not None:
-				taskParamMap['jobParameters'] += [
-					{'type': 'constant',
-					 'value': '--checkPointInterval {0}'.format(config.checkPointInterval)
-					 },
-				]
-		if config.checkPointToLoad is not None:
-			taskParamMap['jobParameters'] += [
-				{'type': 'constant',
-				 'value': '--checkPointToLoad {0}'.format(config.checkPointToLoad)
-				 },
-			]
+		# if config.checkPointToSave is not None:
+		# 	taskParamMap['jobParameters'] += [
+		# 		{'type': 'constant',
+		# 		 'value': '--checkPointToSave {0}'.format(config.checkPointToSave)
+		# 		 },
+		# 	]
+		# 	if config.checkPointInterval is not None:
+		# 		taskParamMap['jobParameters'] += [
+		# 			{'type': 'constant',
+		# 			 'value': '--checkPointInterval {0}'.format(config.checkPointInterval)
+		# 			 },
+		# 		]
+		# if config.checkPointToLoad is not None:
+		# 	taskParamMap['jobParameters'] += [
+		# 		{'type': 'constant',
+		# 		 'value': '--checkPointToLoad {0}'.format(config.checkPointToLoad)
+		# 		 },
+		# 	]
 		if config.trainingDS:
 			taskParamMap['jobParameters'] += [
 				{'type': 'constant',
@@ -235,12 +318,12 @@ class Phpo:
 				 'value': '--inMap "{\'IN_DATA\': ${IN_DATA/T}}"'
 				 },
 			]
-		if config.evaluationMeta:
-			taskParamMap['jobParameters'] += [
-				{'type': 'constant',
-				 'value': '--outMetaFile={0}'.format(config.evaluationMeta),
-				 },
-			]
+		# if config.evaluationMeta:
+		# 	taskParamMap['jobParameters'] += [
+		# 		{'type': 'constant',
+		# 		 'value': '--outMetaFile={0}'.format(config.evaluationMeta),
+		# 		 },
+		# 	]
 		if self._segmentSpecFile:
 			taskParamMap['segmentedWork'] = True
 			with open(self._segmentSpecFile) as f:
@@ -280,6 +363,7 @@ class Phpo:
 				 'value': lfn,
 				 'dataset': config.outDS,
 				 'hidden': True,
+				 'allowNoOutput': True,
 				 },
 				{'type': 'constant',
 				 'value': '--outMetricsFile=${{OUTPUT0}}^{0}'.format(config.evaluationMetrics),
@@ -294,7 +378,8 @@ class Phpo:
 		if self._intrSrv:
 			Client.useIntrServer()
 
-		tmpDir, archiveName, sourceURL = self._makeSandbox(verbose=verbose, files_from=files_from)
+		tmpDir, archiveName, sourceURL = self._makeSandbox()
+		print(tmpDir, archiveName, sourceURL)
 		taskParamMap = self.taskParams(archiveName, sourceURL)
 
 		if checkOnly:
@@ -336,6 +421,10 @@ class Phpo:
 		dumpItem['returnOut'] = tmpStr
 		dumpItem['jediTaskID'] = taskID
 
+		# curDir = os.getcwd()
+		# tmpDir = os.path.join(curDir, self.tmp_dir)
+		# os.remove(tmpDir)
+
 		# dump
 		if dumpJson:
 			with open(dumpJson, 'w') as f:
@@ -344,6 +433,112 @@ class Phpo:
 			with open(dumpYaml, 'w') as f:
 				yaml.dump(dumpItem, f)
 		return
+
+	def putFile(self, file,verbose=False):
+		"""Upload a file with the size limit on 10 MB
+		args:
+			file: filename to be uploaded
+			verbose: True to see debug messages
+			useCacheSrv: True to use a dedicated cache server separated from the PanDA server
+			reuseSandbox: True to avoid uploading the same sandbox files
+		returns:
+			status code
+				0: communication succeeded to the panda server
+			255: communication failure
+			diagnostic message
+		"""
+		# size check for noBuild
+		sizeLimit = 10*1024*1024
+		fileSize = os.stat(file)[stat.ST_SIZE]
+		if not os.path.basename(file).startswith('sources.'):
+			if fileSize > sizeLimit:
+				errStr  = 'Exceeded size limit (%sB >%sB). ' % (fileSize,sizeLimit)
+				errStr += 'Your working directory contains too large files which cannot be put on cache area. '
+				errStr += 'Please submit job without --noBuild/--libDS so that your files will be uploaded to SE'
+				# get logger
+				tmpLog = PLogger.getPandaLogger()
+				tmpLog.error(errStr)
+				return EC_Failed,'False'
+		# instantiate curl
+		curl = my_Curl(id_token=self.id_token)
+		curl.verbose = verbose
+
+		# check duplicate
+		# get CRC
+		fo = open(file, 'rb')
+		fileContent = fo.read()
+		fo.close()
+		footer = fileContent[-8:]
+
+		checkSum, i_size = struct.unpack("II",footer)
+		# check duplication
+		url = baseURLSSL + '/checkSandboxFile'
+		data = {'fileSize':fileSize,'checkSum':checkSum}
+		status, output = curl.post(url,data)
+		output = str_decode(output)
+		if status != 0:
+			return EC_Failed,'ERROR: Could not check Sandbox duplication with %s' % status
+		elif output.startswith('FOUND:'):
+			# found reusable sandbox
+			hostName,reuseFileName = output.split(':')[1:]
+			# set cache server hostname
+			setCacheServer(hostName)
+			# return reusable filename
+			return 0,"NewFileName:%s" % reuseFileName
+
+		url = baseURLCSRVSSL + '/putFile'
+		data = {'file': file}
+		s,o = curl.put(url,data)
+		return s, str_decode(o)
+	
+	def insertTaskParams(self, taskParams, properErrorCode=False, parent_tid=None):
+		"""Insert task parameters
+
+		args:
+			taskParams: a dictionary of task parameters
+			verbose: True to see verbose messages
+			properErrorCode: True to get a detailed error code
+			parent_tid: ID of the parent task
+		returns:
+			status code
+					0: communication succeeded to the panda server
+					255: communication failure
+			tuple of return code, message from the server, and taskID if successful, or error message if failed
+					0: request is processed
+					1: duplication in DEFT
+					2: duplication in JEDI
+					3: accepted for incremental execution
+					4: server error
+		"""
+		verbose=self.verbose
+		# serialize
+		taskParamsStr = json.dumps(taskParams)
+		# instantiate curl
+		curl = modified_Curl(token_file=self.token_file)
+		# curl = Client._Curl()
+		curl.verbose = verbose
+		curl.sslCert = _x509()
+		curl.sslKey  = _x509()
+		# execute
+		url = baseURLSSL + '/insertTaskParams'
+		data = {'taskParams':taskParamsStr,
+				'properErrorCode':properErrorCode}
+		if parent_tid:
+			data['parent_tid'] = parent_tid
+		status,output = curl.post(url,data)
+		try:
+			loaded_output = list(pickle_loads(output))
+			# extract taskID
+			try:
+				m = re.search('jediTaskID=(\d+)', loaded_output[-1])
+				taskID = int(m.group(1))
+			except Exception:
+				taskID = None
+			loaded_output.append(taskID)
+			return status, loaded_output
+		except Exception as e:
+			errStr = dump_log("insertTaskParams", e, output)
+			return EC_Failed, output+'\n'+errStr
 
 	# def saveSearchSpace(self, name: str):
 	# 	search_space = {

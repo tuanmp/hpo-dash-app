@@ -23,7 +23,7 @@ class JobConfig:
         self._minUnevaluatedPoints = 0
         self._steeringContainer = "gitlab-registry.cern.ch/zhangruihpc/steeringcontainer:0.0.4"
         self._searchAlgorithm = 'nevergrad'
-        self._searchSpaceFile = ""
+        # self._searchSpaceFile = ""
         # evaluation configurations
         self._evaluationContainer = "docker://gitlab-registry.cern.ch/zhangruihpc/evaluationcontainer:mlflow"
         self._evaluationExec = ""
@@ -41,7 +41,32 @@ class JobConfig:
         self._uuid = str(MiscUtils.wrappedUuidGen()).upper()
         self._siteOptions = siteOptions
         self._searchAlgOptions = searchAlgorithmOptions
+        self._user=""
         pass
+
+    @property
+    def is_valid(self):
+        if not (isinstance(self.nParallelEvaluation, int) and self.nParallelEvaluation > 0):
+            return False, 'Number of parallel evaluations'
+        if not (isinstance(self.maxPoints, int) and self.maxPoints > 0):
+            return False, 'Max number of points'
+        if not (isinstance(self.maxEvaluationJobs, int) and self.maxEvaluationJobs > 0):
+            return False, 'Max number of evaluation jobs'
+        if not (isinstance(self.minUnevaluatedPoints, int) and self.minUnevaluatedPoints >= 0):
+            return False, 'Min number unevaluated jobs'
+        if not (isinstance(self.nPointsPerIteration, int) and self.nPointsPerIteration > 0):
+            return False, 'Number of points per iterations'
+        if not (isinstance(self.evaluationContainer, str) and len(self.evaluationContainer) > 0):
+            return False, 'Evaluation container'
+        if not (isinstance(self.evaluationExec, str) and len(self.evaluationExec) > 0):
+            return False, 'Evaluation command'
+        if not (isinstance(self.evaluationInput, str) and len(self.evaluationInput) > 0):
+            return False, 'Evaluation input'
+        if not (isinstance(self.evaluationOutput, str) and len(self.evaluationOutput) > 0):
+            return False, 'Evaluation output'
+        if not (isinstance(self.sites, list) and len(self.sites) > 0):
+            return False, 'Grid sites'
+        return True, None       
 
     def get(self, att, default):
         try:
@@ -64,22 +89,46 @@ class JobConfig:
             "evaluationOutput": self.evaluationOutput,
             'evaluationMetrics': self.evaluationMetrics,
             'trainingDS': self.trainingDS,
-            'sites': self.sites, 
+            'site': self.site, 
             'customOutDS': self.customOutDS,
             'outDS': self.outDS,
-            'steeringExec': self.steeringExec
+            'steeringExec': self.steeringExec,
+            'steeringContainer': self.steeringContainer
         }
     
+    def parse(self, config):
+        for key, value in config.items():
+            if not key in self._conf: continue
+            try:
+                setattr(self, key, value)
+            except Exception as e:
+                print(e)
+
+
+
     @property
     def config(self):
-        exclude = ['customOutDS', 'steeringExec']
+        exclude = ['customOutDS', 'steeringContainer', 'searchAlgorithm']
         return {
             item: value for item, value in self._conf.items() if (value is not None and value!="" and item not in exclude)
         }
 
     @property
+    def storage_config(self):
+        exclude = ['steeringExec']
+        return {
+            item: value for item, value in self._conf.items() if item not in exclude
+        }
+
+    @property
     def user(self):
-        return PsubUtils.getNickname()
+        return self._user
+    @user.setter
+    def user(self, user):
+        if isinstance(user, str):
+            self._user=user
+        else:
+            raise TypeError('user must be a string')
 
     @property
     def uuid(self):
@@ -173,18 +222,6 @@ class JobConfig:
         return steeringExecTemplate.replace("#STEERINGCONTAINER", self.steeringContainer).replace("#METHOD", self.searchAlgorithm)
 
     @property
-    def searchSpaceFile(self):
-        return self._searchSpaceFile
-
-    @searchSpaceFile.setter
-    def searchSpaceFile(self, t):
-        if isinstance(t, str) and t.endswith(".json"):
-            self._searchSpaceFile = t
-        else:
-            raise ValueError(
-                "{} is an invalid value for searchSpaceFile".format(t))
-
-    @property
     def evaluationContainer(self):
         return self._evaluationContainer
 
@@ -244,17 +281,17 @@ class JobConfig:
             raise ValueError(
                 "{} is an invalid value of evaluationOutput".format(t))
 
-    @property
-    def evaluationMeta(self):
-        return self._evaluationMeta
+    # @property
+    # def evaluationMeta(self):
+    #     return self._evaluationMeta
 
-    @evaluationMeta.setter
-    def evaluationMeta(self, t):
-        if isinstance(t, str):
-            self._evaluationMeta = t
-        else:
-            raise ValueError(
-                "{} is an invalid value of evaluationMeta".format(t))
+    # @evaluationMeta.setter
+    # def evaluationMeta(self, t):
+    #     if isinstance(t, str):
+    #         self._evaluationMeta = t
+    #     else:
+    #         raise ValueError(
+    #             "{} is an invalid value of evaluationMeta".format(t))
 
     @property
     def evaluationMetrics(self):
@@ -325,6 +362,18 @@ class JobConfig:
     #     else:
     #         raise TypeError(
     #             "{} is an invalid value of checkPointInterval".format(n))
+
+    @property
+    def site(self):
+        return ','.join(self.sites)
+    @site.setter
+    def site(self, site):
+        new_sites = []
+        for item in site.replace(' ', '').split(','):
+            if item in self._siteOptions:
+                new_sites.append(item)
+        if len(new_sites)>0:
+            self._sites = new_sites
 
     @property
     def sites(self):

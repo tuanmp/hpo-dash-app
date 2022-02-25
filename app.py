@@ -7,7 +7,7 @@ from dash import dash_table
 from dash import callback_context
 from dash.exceptions import PreventUpdate
 import pandas as pd
-from dash.dependencies import Input, Output, State, MATCH
+from dash.dependencies import Input, Output, State, MATCH, ALL
 import plotly.express as px
 
 from apps.submission import submission, render_job_config
@@ -18,8 +18,9 @@ from apps.footer import footer
 from apps.components.utils import check_set, my_OpenIdConnect_Utils, my_Curl
 import dash_bootstrap_components as dbc
 from apps.components.TaskRetriever import Retriever
-from apps.components.SearchSpace import Hyperparameter
+from apps.components.SearchSpace import Hyperparameter, SearchSpace, Hyperparameters
 from apps.components.Phpo import Phpo 
+from apps.components.JobConfigurations import JobConfig
 from apps.components.utils import get_index, getMethod, decode_id_token
 import time
 import json, yaml, base64, datetime
@@ -60,7 +61,7 @@ app.layout = html.Div(
 			id='app-page-content',
 			children=[]
 		),
-		footer()
+		# footer()
 	], style={'height': "100vh"})
 
 task=Phpo()
@@ -71,7 +72,7 @@ index=len(hyperparameters)+len(search_space)
 authorization_output = {}
 uid = uuid.uuid4()
 info = ' (marked for removal)'
-                                    
+									
 with open('apps/messages.json') as f:
 	messages = json.load(f)
 
@@ -90,6 +91,19 @@ def getOutput(outQueue):
 	except Empty:
 		return outStr
 
+def add_search_space_element(name, value, current_search_space):
+	index = max([int(id) for id in current_search_space.keys()]) + 1
+	tmp = Hyperparameter(index)
+	tmp.parse(name, value)
+	if tmp.isValid:
+		current_search_space[index]={
+			'name': name,
+			'method': value['method'],
+			'dimension': value['dimension']
+		}
+	return current_search_space
+
+
 @app.callback(
 	Output('app-page-content', 'children'),
 	Output('profile-button', 'children'),
@@ -100,56 +114,15 @@ def getOutput(outQueue):
 	# Input('user-credentials-container', 'children'),
 	# State('app-page-content', 'children'),
 	State('local-storage', 'data'),
+	# State('task-configuration-storage','data'),
 	# State('profile-button', 'label'),
 	# State('profile-button', 'children'),
 )
 def navigate(hash, pathname, data):
-	# profile_button_children = []
-	# curl = my_Curl()
+
 	oidc = my_Curl().get_oidc(PLogger.getPandaLogger(), verbose=True)
 	status, token, dec = oidc.check_token(data)
-	# trigger=callback_context.triggered[0]['prop_id']
-	# if "user-credentials-container" in trigger:
-	# 	return page_content, json.loads(credentials), label, profile_content
-	# if pathname!='/login':
-	# 	if status:
-	# 		# exp_time = datetime.datetime.utcfromtimestamp(dec['exp'])
-	# 		# delta = exp_time - datetime.datetime.utcnow()
-	# 		# profile_button_children.append(
-	# 		# 	dbc.DropdownMenuItem(f'Token expires in {delta}', header=True)
-	# 		# )
-	# 		pass
-	# 	elif isinstance(token, dict) and 'refresh_token' in token:
-	# 		try:
-	# 			refresh_token_string = token.get('refresh_token')
-	# 			s, o = oidc.fetch_page(oidc.auth_config_url)
-	# 			if not s:
-	# 				print(f'Cannot fetch {oidc.auth_config_url}')
-	# 			auth_config = o
-	# 			s, o = oidc.fetch_page(auth_config['oidc_config_url'])
-	# 			if not s:
-	# 				print(f"Cannot fetch {auth_config['oidc_config_url']}")
-	# 				return data
-	# 			endpoint_config = o
-	# 			if refresh_token_string is not None:
-	# 				oidc.log_stream.info('Refreshing token')
-	# 				s, o = oidc.refresh_token(endpoint_config['token_endpoint'], auth_config['client_id'], auth_config['client_secret'], refresh_token_string)
-	# 				# refreshed
-	# 				if s:
-	# 					oidc.log_stream.info('token refreshed')
-	# 					for key, value in o.items():
-	# 						data[key] = value
-	# 				else:
-	# 					if oidc.verbose:
-	# 						oidc.log_stream.debug('failed to refresh token: {0}'.format(o))
-	# 		except Exception as e:
-	# 			print(e)
-	# 	else:
-	# 		s, data, _ = oidc.run_device_authorization_flow(data)
-	# 		data['expires_at']=datetime.datetime.utcnow() + datetime.timedelta(seconds=data['expires_in'])
-	# 		profile_button_children.append(
-	# 			dbc.DropdownMenuItem(f'Sign in', id='authenticate-button', href="/login"),
-	# 		)
+
 	try:
 		label = dec['preferred_username']
 	except:
@@ -157,19 +130,7 @@ def navigate(hash, pathname, data):
 	if pathname=='/home':
 		return homepage(), label
 	elif pathname=='/submission':
-		global task
-		task=Phpo(), label
-		global hyperparameters
-		hyperparameters={}
-		global search_space
-		search_space=task.HyperParameters
-		global job_config
-		job_config=task.JobConfig
-		global index
-		index=len(hyperparameters)+len(search_space)
-		if len(hyperparameters)==0:
-			hyperparameters[0]=Hyperparameter(index=0)
-		return submission(config=job_config, hyperparameters=hyperparameters, search_space=search_space), label
+		return submission(), label
 	elif pathname=='/monitor':
 		return monitor(), label
 	elif pathname=='/develop':
@@ -178,30 +139,38 @@ def navigate(hash, pathname, data):
 
 @app.callback(
 	Output("authentication-button-container", "is_open"),
+	Output("authentication-button-container", "title"),
+	Output('authentication-message', 'children'),
+	Output('signin-button-container', 'hidden'),
+	Output('signout-button-container', 'hidden'),
 	Output("session-storage", 'data'),
 	Output('authentication-button', 'href'),
 	Input("profile-button", "n_clicks"),
+	Input('signout-button', 'n_clicks'),
 	State("authentication-button-container", "is_open"),
 	State('local-storage', 'data'),
 	prevent_initial_call=True
 )
-def toggle_authentication_button(signal, is_open, data):
+def toggle_authentication_button(signal, signout_signal, is_open, data):
+	trigger = callback_context.triggered[0]['prop_id']
+	if 'signout-button' in trigger:
+		return False, "", "", True, True, {"token_valid": False, "refreshing": False, 'authenticating': False, 'signout': True}, '#'
 	if is_open:
 		raise PreventUpdate()
 	curl = my_Curl()
 	oidc = curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
 	status, token_detail, dec = oidc.check_token(data)
 	if status:
-		return False, {"token_valid": True, "refreshing": False, 'authenticating': False, "token": token_detail}, '#'
+		return True, "Valid ID token available", "No further action required.", True, False, {"token_valid": True, "refreshing": False, 'authenticating': False, "token": token_detail}, '#'
 	elif token_detail.get('refresh_token') is not None:
 		s, o = oidc.run_refresh_token_flow(token_detail.get('refresh_token'))
 		print(s,o)
 		if s:
-			return False, {"token_valid": True, "refreshing": True, 'authenticating': False, "token": o}, '#'
+			return True,  "Valid ID token available", "No further action required.", True, False, {"token_valid": True, "refreshing": True, 'authenticating': False, "token": o}, '#'
 	s, o, _ = oidc.run_device_authorization_flow(data)
 	if s:
-		return True,  {"token_valid": False, "refreshing": False, 'authenticating': True, "authentication_output": o}, o.get('verification_uri_complete', '#')
-	return False, {"token_valid": False, "refreshing": False, 'authenticating': False, "authentication_output": o}, '#'
+		return True, "Valid ID token unavailable", "Following the following link to authenticate with PANDA server", False, True, {"token_valid": False, "refreshing": False, 'authenticating': True, "authentication_output": o}, o.get('verification_uri_complete', '#')
+	return True, "Valid ID token unavailable", "Sign out and reauthenticate", False, True, {"token_valid": False, "refreshing": False, 'authenticating': False, "authentication_output": o}, '#'
 
 
 @app.callback(
@@ -213,6 +182,9 @@ def toggle_authentication_button(signal, is_open, data):
 def update_id_token(data, signal):
 	trigger=callback_context.triggered[0]['prop_id']
 	if "session-storage" in trigger:
+		if data.get('signout')==True:
+			print('signin out')
+			return {}
 		if data['token_valid'] and data['refreshing']:
 			return data['token']
 		else:
@@ -233,101 +205,7 @@ def update_id_token(data, signal):
 		if not s:
 			raise PreventUpdate()
 		return o
-
-
-# @app.callback(
-# 	Output('user-credentials-container', 'children'),
-# 	Input('login-button', 'n_clicks'),
-# 	State('user-credentials', 'data'),
-# 	prevent_initial_call=True
-# )
-# def authenticate(signal, data):
-# 	print("Getting ID token")
-# 	curl=my_Curl()
-# 	oidc = curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
-# 	if not all([element in data for element in ['token_endpoint', 'client_id', 'client_secret', 'device_code', 'expires_in']]):
-# 		oidc.log_stream.error('Not enough elements to obtain token')
-# 		raise PreventUpdate()
-# 	s, o = oidc.get_id_token(
-# 		data['token_endpoint'],
-# 		data['client_id'],
-# 		data['client_secret'],
-# 		data['device_code'],
-# 		5, 
-# 		data['expires_in']
-# 	)
-# 	if not s:
-# 		oidc.log_stream.error(f"Cannot obtain token. Error message {o}")
-# 		raise PreventUpdate()
-# 	print(o)
-# 	return f'{o}'
-
-# @app.callback(
-# 	Output('profile-button', 'label'),
-# 	Output('profile-button', 'children'),
-# 	Output('user-credentials', 'data'),
-# 	Input('user-credentials', 'data'),
-# 	State('url', 'pathname')
-# )
-# def format_login_button(data, pathname):
-# 	curl=my_Curl()
-# 	oidc= curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
-# 	status, token, dec=oidc.check_token(data)
-# 	label="login"
-# 	children=[]
-	
-# 	if status:
-# 		label = dec['preferred_username']
-# 	else:
-# 		label = 
-
-
-# @app.callback(
-# 	Output('user-credentials', 'data'),
-# 	Input('refresh-button', 'n_clicks'),
-# 	State('user-credentials', 'data'),
-# 	prevent_initial_call=True
-# )
-# def get_token(signal, data):
-# 	trigger = callback_context.triggered[0]['prop_id']
-# 	print(trigger)
-# 	curl = my_Curl()
-# 	oidc = curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
-# 	status, token, dec = oidc.check_token(data)
-# 	if 'refresh-button' in trigger:
-# 		if status:
-# 			oidc.log_stream.info("Token still valid")
-# 			return data
-# 		try:
-# 			refresh_token_string = token.get('refresh_token')
-# 			s, o = oidc.fetch_page(oidc.auth_config_url)
-# 			if not s:
-# 				print(f'Cannot fetch {oidc.auth_config_url}')
-# 				return data
-# 			auth_config = o
-# 			s, o = oidc.fetch_page(auth_config['oidc_config_url'])
-# 			if not s:
-# 				print(f"Cannot fetch {auth_config['oidc_config_url']}")
-# 				return data
-# 			endpoint_config = o
-# 			if refresh_token_string is not None:
-# 				oidc.log_stream.info('Refreshing token')
-# 				s, o = oidc.refresh_token(endpoint_config['token_endpoint'], auth_config['client_id'], auth_config['client_secret'], refresh_token_string)
-# 				# refreshed
-# 				if s:
-# 					oidc.log_stream.info('token refreshed')
-# 					for key, value in o.items():
-# 						data[key] = value
-# 				else:
-# 					if oidc.verbose:
-# 						oidc.log_stream.debug('failed to refresh token: {0}'.format(o))
-# 			return data
-# 		except Exception as e:
-# 			print(e)
-# 			return {}
-# 	else:
-# 		return data
-
+	raise PreventUpdate()
 
 @app.callback(
 	Output("taskID-search-alert-header", "children"),
@@ -514,9 +392,13 @@ def switch_tab(nb2,nb3,nb4, nn1, nn2, nn3):
 
 @app.callback(
 	Output('task-config-review', 'children'),
-	Input('submission-tabs', 'value')
+	Output('saved-search-space-review', 'children'),
+	Input('submission-tabs', 'value'),
+	State('task-configuration-storage','data'),
+	State('search-space-storage', 'data'),
+	prevent_initial_call=True
 )
-def display_review(value):
+def display_review(value, saved_data, search_space_data):
 	configurations = (
 		("nParallelEvaluation", 'Number of parallel evaluations'),
 		("maxPoints", 'Max number of points'),
@@ -529,12 +411,15 @@ def display_review(value):
 		("evaluationExec", 'Evaluation execution'),
 		("evaluationInput", 'Evaluation input'),
 		("trainingDS", 'Training dataset'),
-		("evaluationTrainingData", 'Training data'),
 		("evaluationOutput", 'Evaluation output'),
 		("evaluationMetrics", 'Evaluation metrics'),
 		("customOutDS", 'Output dataset name'),
 	)
 	if value=='4':
+		job_config = JobConfig()
+		job_config.parse(saved_data)
+		ss = SearchSpace()
+		ss.parse_from_memory(search_space_data)
 		data = {}
 		for att, index in configurations:
 			if getattr(job_config, att):
@@ -542,17 +427,21 @@ def display_review(value):
 		table = pd.DataFrame.from_dict(data, orient='index', columns=['Value'])
 		table.index.set_names('Configuration', inplace=True)
 		table = dbc.Table.from_dataframe(table, striped=True, bordered=True, hover=True, index=True)	
-		return table
+		return table, [item.display_search_space_element() for item in ss.search_space_objects.values()]
 	else:
-		return None
+		raise PreventUpdate()
 
 ### Callbacks for saving configurations
 @app.callback(
-	Output("configuration-alert", 'is_open'),
-	Output("configuration-alert", 'header'),
-	Output("configuration-alert", 'children'),
-	Output("configuration-alert", 'icon'),
+	# Output("configuration-alert", 'is_open'),
+	# Output("configuration-alert", 'header'),
+	# Output("configuration-alert", 'children'),
+	# Output("configuration-alert", 'icon'),
+	Output("configuration-container", 'children'),
+	Output('task-configuration-storage','data'),
 	Input({'type': 'save-button', 'index':'3'}, 'n_clicks'),
+	Input("upload-task-conf", "contents"),
+	Input("upload-task-conf", "filename"),
 	State("nParallelEvaluation", 'value'),
 	State("maxPoints", 'value'),
 	State("maxEvaluationJobs", 'value'),
@@ -564,262 +453,113 @@ def display_review(value):
 	State("evaluationExec", 'value'),
 	State("evaluationInput", 'value'),
 	State("trainingDS", 'value'),
-	State("evaluationTrainingData", 'value'),
+	# State("evaluationTrainingData", 'value'),
 	State("evaluationOutput", 'value'),
 	State("evaluationMetrics", 'value'),
 	State("customOutDS", 'value'),
+	# State('task-configuration-storage','data'),
 	prevent_initial_call=True
 )
 def save_config(*args):
-	print(callback_context.states_list)
+	trigger=callback_context.triggered[0]['prop_id']
 	error_messages = []
-	for state in callback_context.states_list:
-		n_errors = len(error_messages)
-		att = state.get('id')
-		value = state.get('value')
-		success, ret = check_set(att, value, job_config)
-		if not success:
-			error_messages.append( f'({n_errors+1}) ' + str(ret))
-	if len(error_messages) == 0:
-		return True, messages['configuration']['valid']['header'], messages['configuration']['valid']['body'], 'success'
+	job_config = JobConfig()
+	if 'save-button' in trigger:
+		for state in callback_context.states_list:
+			n_errors = len(error_messages)
+			att = state.get('id')
+			value = state.get('value')
+			if att=='task-configuration-storage': continue
+			success, ret = check_set(att, value, job_config)
+			if not success:
+				error_messages.append( f'({n_errors+1}) ' + str(ret))
+	 #True, messages['configuration']['invalid']['header'], '\n'.join(error_messages), 'warning'
 	else:
-		error_messages.insert(0, messages['configuration']['invalid']['body'])
-		return True, messages['configuration']['invalid']['header'], '\n'.join(error_messages), 'warning'
+		filename=args[2]
+		content=args[1]
+		content_type, content_string = content.split(",")
+		configs = json.loads(base64.b64decode(content_string))
+		for att, value in configs.items():
+			success, ret = check_set(att, value, job_config)
+			if not success:
+				print(f"{att}: {value} not set. {ret}")
+	return render_job_config(job_config), job_config.storage_config
 
-### Change name of hyperparameter upon input name
-@app.callback(Output({"type": "hyperparameter-name", "index": MATCH}, "children"), 
-			Input({"type": "hyperparameter-name-input", "index": MATCH}, "value"), 
-			prevent_initial_call=True)
-def change_title(name):
-	index=callback_context.inputs_list[0]['id']["index"]
-	if name and (not bool(re.search(u"\W", name))):
-		hyperparameters[index].name=name
-		return name
-	else:
-		hyperparameters[index].name=None
-		return "Undefined Hyperparameter"
-
-### Display method dimension
 @app.callback(
-	Output({"type": "method-dimension-container", "index": MATCH}, "children"),
-	Input({"type": "sampling-method-selector", "index": MATCH}, "value"),
+	Output('name-input', 'value'),
+	Output('search-space-storage', 'data'),
+	Output("search-space-board", "children"), 
+	Input('add-button', 'n_clicks'), 
+	# Input({"type":"add-item-button", "index": ALL}, "n_clicks"),
+	Input({"type": "sampling-method-selector", "index": ALL}, "value"),
+	Input({"type": 'max', "index": ALL}, 'value'),
+	Input({"type": 'min', "index": ALL}, 'value'),
+	Input({"type":"item-value-input", "index": ALL}, 'value'),
+	Input({"type": "delete-button", "index": ALL}, 'n_clicks'),
+	Input("upload-search-space", "contents"),
+	State("upload-search-space", "filename"),
+	# Input({"type": "display-items", "index": ALL}, 'value'),
+	State('search-space-storage', 'data'),
+	State('name-input', 'value'),
+	
 	prevent_initial_call=True
 )
-def show_method_info(selected_method):
-	index=callback_context.inputs_list[0]['id']["index"]
-	messages={
-		"Categorical": "The value of this hyperparameter in a hyperparameter point is uniformly picked from a list of values that you will specify.",
-		'Normal': 'The numerical value of this hyperparameter or its logarithm is sampled over a Gaussian distribution defined by a mean \u03BC and variance \u03C3\u00B2 that you will specify.',
-		'Uniform': 'The numberical value of this hyperparameter or logarithms is uniformly sampled from a range that you will specify'
-	}
-	hyperparameters[index].method=selected_method
-	return hyperparameters[index].display_method
-
-### Add value to categories
-@app.callback(
-	Output({"type": "display-items", "index": MATCH}, "options"),
-	Output({"type": "display-items", "index": MATCH}, "value"),
-	Output({"type":"item-value-input", "index": MATCH}, "value"),
-	Input({"type":"add-item-button", "index": MATCH}, "n_clicks"),
-	Input({"type": "display-items", "index": MATCH}, "value"),
-	State({"type":"item-value-input", "index": MATCH}, "value"),
-	State({"type": "display-items", "index": MATCH}, "options"),
-	State({"type": "display-items", "index": MATCH}, "value"),
-	prevent_initial_call=True)
-def display_values(n1, activeValues, inputValue, options, values):
-	index=callback_context.inputs_list[0]['id']["index"]
-	triggeringInput="new-value"
-	if "display-items" in callback_context.triggered[0]["prop_id"]:
-		triggeringInput="active-value"
-	if triggeringInput=="new-value":
-		if inputValue is None: 
-			inputValue = ""
-		inputValue = inputValue.strip()
-		if not {"label": inputValue, "value": inputValue} in options:
-			hyperparameters[index].dimensions["Categorical"]["categories"].append(inputValue)
-			return options + [{"label": inputValue, "value": inputValue}], values+[inputValue], ""
-		else:
-			return options, values, inputValue
-	else: 
-		hyperparameters[index].dimensions["Categorical"]['categories']=activeValues
-		return options, values, inputValue
-
-@app.callback(
-	Output({"type": "low", "index": MATCH}, "valid"),
-	Output({"type": "low", "index": MATCH}, "invalid"),
-	Output({"type": "high", "index": MATCH}, "valid"),
-	Output({"type": "high", "index": MATCH}, "invalid"),
-	Input({"type": "low", "index": MATCH}, "value"),
-	Input({"type": "high", "index": MATCH}, "value"),
-	Input({"type": 'isInt', "index": MATCH}, 'value'),
-	prevent_initial_call=True
-)
-def low_high_reaction(low, high, isInt):
-	index=callback_context.inputs_list[0]['id']["index"]
-	hyperparameters[index].dimensions['Uniform']['isInt']=isInt
-	if isInt:
-		if checkInt(low) and checkInt(high) and int(high)>int(low):
-			hyperparameters[index].dimensions["Uniform"]["high"]=int(high)
-			hyperparameters[index].dimensions["Uniform"]["low"]=int(low)
-			return True, False, True, False,
-		else:
-			hyperparameters[index].dimensions["Uniform"]["high"]=None
-			hyperparameters[index].dimensions["Uniform"]["low"]=None
-			return False, True, False, True
-	else:
-		if checkFloat(low) and checkFloat(high) and high>low:
-			hyperparameters[index].dimensions["Uniform"]["high"]=float(high)
-			hyperparameters[index].dimensions["Uniform"]["low"]=float(low)
-			return True, False, True, False,
-		else:
-			hyperparameters[index].dimensions["Uniform"]["high"]=None
-			hyperparameters[index].dimensions["Uniform"]["low"]=None
-			return False, True, False, True
-
-@app.callback(
-	Output({"type": "log", "index": MATCH}, "valid"),
-	Output({"type": "log", "index": MATCH}, "invalid"),
-	Input({"type": "log", "index": MATCH}, "value"),
-	State({"type": "sampling-method-selector", "index": MATCH}, "value"),
-	prevent_initial_call=True
-)
-def log_reaction(value, Method):
-	index=callback_context.inputs_list[0]['id']["index"]
-	hyperparameters[index].dimensions[Method]["base"]=value
-	if value is None:
-		return False, False
-	elif value==0:
-		hyperparameters[index].dimensions[Method]["base"]=None
-		return False, True
-	else:
-		return True, False
-
-@app.callback(
-	Output({"type": "q", "index": MATCH}, "valid"),
-	Output({"type": "q", "index": MATCH}, "invalid"),
-	Input({"type": "q", "index": MATCH}, "value"),
-	State({"type": "sampling-method-selector", "index": MATCH}, "value"),
-	prevent_initial_call=True
-)
-def q_reaction(value, Method):
-	index=callback_context.inputs_list[0]['id']["index"]
-	hyperparameters[index].dimensions[Method]["q"]=value
-	if value is None:
-		return False, False
-	elif value==0:
-		hyperparameters[index].dimensions[Method]["q"]=None
-		return False, True
-	else:
-		return True, False
-
-@app.callback(
-	Output({"type": "min", "index": MATCH}, "valid"),
-	Output({"type": "min", "index": MATCH}, "invalid"),
-	Output({"type": "max", "index": MATCH}, "valid"),
-	Output({"type": "max", "index": MATCH}, "invalid"),
-	Input({"type": "min", "index": MATCH}, "value"),
-	Input({"type": "max", "index": MATCH}, "value"),
-	State({"type": "sampling-method-selector", "index": MATCH}, "value")
-)
-def min_max_reaction(min, max, Method):
-	index=callback_context.inputs_list[0]['id']["index"]
-	# hyperparameters[index].dimensions[Method]["q"]=value
-	min_valid, max_valid=True, True
-	if min is not None and max is not None and min >= max:
-		min_valid, max_valid=False, False
-	if max is None:
-		max_valid=False
-	if min is None:
-		min_valid=False
-	if min_valid and max_valid:
-		hyperparameters[index].dimensions[Method]["low"]=min
-		hyperparameters[index].dimensions[Method]["high"]=max
-	return min_valid, not min_valid, max_valid, not max_valid
-
-@app.callback(
-	Output({"type": "mu", "index": MATCH}, "valid"),
-	Output({"type": "mu", "index": MATCH}, "invalid"),
-	Output({"type": "sigma", "index": MATCH}, "valid"),
-	Output({"type": "sigma", "index": MATCH}, "invalid"),
-	Input({"type": "mu", "index": MATCH}, "value"),
-	Input({"type": "sigma", "index": MATCH}, "value"),
-	State({"type": "sampling-method-selector", "index": MATCH}, "value")
-)
-def mu_sigma_reaction(mu, sigma, Method):
-	index=callback_context.inputs_list[0]['id']["index"]
-	# hyperparameters[index].dimensions[Method]["q"]=value
-	mu_valid, sigma_valid=True, True
-	if mu is None:
-		mu_valid=False
-	if sigma is None or sigma==0:
-		sigma_valid=False
-	if mu_valid and sigma_valid:
-		hyperparameters[index].dimensions[Method]["mu"]=mu
-		hyperparameters[index].dimensions[Method]["sigma"]=sigma
-	return mu_valid, not mu_valid, sigma_valid, not sigma_valid
-
-# Save current hyperparameter and add new one
-@app.callback(Output("search-space-board", "children"), 
-			Output("saved-search-space", "children"),
-			Output('saved-search-space-review', 'children'),
-
-			Output("search-space-info", "children"),
-			Output("search-space-info", "is_open"),
-
-			Input("add-button", "n_clicks"), 
-			Input("save-button", "n_clicks"),
-
-			Input("upload-search-space", "contents"),
-			Input("upload-search-space", "filename"),
-
-			State("saved-search-space", "children"),
-			prevent_initial_call=True)
-def save_add_hyperparameter(index, saveSignal, contents, filenames, saved_hyperparameters):
-	trigger=callback_context.triggered[0]["prop_id"]
-	n=0
+def modify_search_space(signal, method_list, maxes, mins, category_inputs, delete_signal, content, filename, data, name):
+	trigger=callback_context.triggered[0]['prop_id']
+	ss = SearchSpace()
+	# print(data)
+	ss.parse_from_memory(data)
+	print(f'Parsed search space: {ss.search_space}')
 	if "add-button" in trigger:
-		hyperparameters[index]=Hyperparameter(index=index)
-	elif 'save-button' in trigger:
-		# check the HPs in the editor for those that are valid
-		print(hyperparameters)
-		print(search_space)
-		removing_items = {id: search_space.get(id) for id in [item.get('props',{}).get('id',{}).get('index', -1) for item in saved_hyperparameters if info in item.get('props',{}).get('title',"")]}
-		for id, hp in hyperparameters.items():
-			# check if it is possible to generate a search space element from the HP, this also checks if the HP is valid
-			print(hp.isValid)
-			if not hp.isValid: continue
-			if hp.name in [element.name for element in search_space.values()]: continue
-			# add HP to search_space
-			search_space[id]=hp
-		for id, item in search_space.items():
-			if id in hyperparameters:
-				hyperparameters.pop(id)
-		for id, item in removing_items.items():
-			if id in search_space:
-				search_space.pop(id)
-	else:
-		for content, filename in zip(contents, filenames):
-			if not filename.endswith(".json"):
-				continue
-			content_type, content_string = content.split(",")
-			content = json.loads(base64.b64decode(content_string))
-			for name, element in content.items():
-				n+=task.add_hyperparameter(name, element)
-	return [hp.render() for hp in hyperparameters.values()], [element.display_search_space_element() for element in search_space.values()], [element.display_search_space_element(review=True) for element in search_space.values()], html.P("%d elements were successfully loaded from the provided search space file." % n if n>0 else "None of the elements in the provided file were loaded to the search space."), 'upload-search-space' in trigger 
+		if not name:
+			raise PreventUpdate()
+		ss.add_hyperparameter(name)
+		return "", ss.search_space, [hp.render() for hp in ss.search_space_objects.values()]
+	if 'upload-search-space' in trigger:
+		if not filename.endswith(".json"):
+			raise PreventUpdate()
+		content_type, content_string = content.split(",")
+		content = json.loads(base64.b64decode(content_string))
+		for name, element in content.items():
+			ss.add_hyperparameter(name, element)
+		return "", ss.search_space, [hp.render() for hp in ss.search_space_objects.values()]
+	index = json.loads(trigger.split('.')[0])['index']
+	if "sampling-method-selector" in trigger:
+		method = method_list[index]
+		ss.search_space[index]['method'] = method
+	elif "min" in trigger:
+		ss.search_space[index]['dimension']['low'] = mins[index]
+	elif 'max' in trigger:
+		ss.search_space[index]['dimension']['high'] = maxes[index]
+	elif 'item-value-input' in trigger:
+		category_inputs=category_inputs[index].replace(' ', '').split(',')
+		ss.search_space[index]['dimension']['categories'] = category_inputs
+	elif 'delete-button' in trigger:
+		ss.search_space.pop(index)
+	print(f'Current search space: {ss.search_space}')
+
+	return '', ss.search_space, [hp.render() for hp in ss.search_space_objects.values()]
 
 @app.callback(
-	Output({"type": "display-searchspace-element", "index": MATCH}, "title"),
-	Output({"type": "display-searchspace-element-delete", "index": MATCH}, 'children'),
-	Output({"type": "display-searchspace-element-delete", "index": MATCH}, 'color'),
-	Input({"type": "display-searchspace-element-delete", "index": MATCH}, 'n_clicks'),
-	State({"type": "display-searchspace-element", "index": MATCH}, "title"),
+	Output('additional-file-storage', 'data'),
+	Input('upload-additional-file', 'contents'),
+	State('upload-additional-file', 'filename'),
+	State('additional-file-storage', 'data'),
 	prevent_initial_call=True
 )
-def mark_hyperparameter_for_removal(n, title):
-	if n % 2==1:
-		return title + info, 'Keep hyperparameter', 'primary'
-	else:
-		return title.replace(info, ""), 'Mark for removal', 'danger'
+def upload_additional_file(contents, filename, data):
+	# print(contents, filename)
+	print(data)
+	dst = data.get('tmp_file_location', f'tmp/{uuid.uuid4()}')
+	data['tmp_file_location'] = dst
+	if not os.path.isdir(dst):
+		os.makedirs(dst, exist_ok=True)
+	for name, content in zip(filename, contents):
+		content_type, content_string = content.split(",")
+		content = base64.b64decode(content_string).decode('utf-8')
+		with open(f'{dst}/{name}', 'w') as f:
+			f.write(content)
+	return data
 
 @app.callback(
 	Output('download-search-space', "data"),
@@ -832,85 +572,119 @@ def download(n, files):
 	return {'content': json.dumps(task.SearchSpace), 'filename': 'search_space.json'} if ('search_space' in files and len(search_space)>0) else None, {'content': job_config.to_json(), 'filename': 'config.json'} if 'configuration' in files else None, 
 
 @app.callback(
-	Output("task-conf-info", "children"),
-	Output("task-conf-info", "is_open"),
-	Output("configuration-container", 'children'),
-	Input("upload-task-conf", "contents"),
-	Input("upload-task-conf", "filename"),
-	prevent_initial_call=True 
+	Output('task-submit-button-container', 'hidden'),
+	Output('task-submission-alert-title', 'children'),
+	Output('task-submission-alert-body', 'children'),
+	Output('task-submission-alert', 'is_open'),
+	Input('task-verification', 'n_clicks'),
+	State('search-space-storage', 'data'),
+	State('task-configuration-storage','data'),
+	State('local-storage', 'data'),
+	prevent_initial_call=True
 )
-def load_search_space(content, filename):
-	if not filename.endswith(".json"):
-		return "Task configration input file must be in .json format.", True, render_job_config(job_config)
-	content_type, content_string = content.split(",")
-	configs = json.loads(base64.b64decode(content_string))
-	failList = []
-	for config, value in configs.items():
-		# print(config, value)
-		failList+=task.set_config(config, value)
-	# print(configs)
-	if len(failList) > 0:
-		return "The following configurations cannot be set from the input file. Please manually set them in the Configuration \n %s" % ", ".join(
-			failList), True, render_job_config(job_config)
-	else:
-		return "All configurations successfully set.", True, render_job_config(job_config)
+def check_task(n, search_space, task_config, token_data):
+	oidc= my_Curl().get_oidc(PLogger.getPandaLogger(), verbose=True)
+	status, token_detail, dec = oidc.check_token(token_data)
+	if not status and token_detail.get('refresh_token') is not None:
+		return True, "Your ID token has expired", "Click on your username to refresh the token", True
+	elif not status:
+		return True, "Your ID token is invalid", "If you have not signed in, please sign in. Otherwise, sign out and reauthenticated.", True
+	exp_time = datetime.datetime.utcfromtimestamp(dec['exp'])
+	if status and datetime.datetime.utcnow() + datetime.timedelta(seconds=120) > exp_time:
+		return True, "Your ID token is expiring soon", "Click on your username to refresh the token.", True
+	job_config = JobConfig()
+	job_config.parse(task_config)
+	status, error_config = job_config.is_valid
+	if not status:
+		return True, "Your task config is invalid", f"Please check the following configuration: {error_config}", True
+	ss = SearchSpace()
+	ss.parse_from_memory(search_space)
+	is_valid = ss.is_valid
+	if len(is_valid)==0:
+		return True, "Empty search space", f"The search space must have at least one hyperparameter. Please return to 'Search Space' tab to define the search", True
+	for status, error in ss.is_valid:
+		if not status:
+			return True, "One of the hyperparameters is invalid", f"{error}", True
+	return False, "Task ready to submit", "Click on Submit button to submit task", True
 
-curl = my_Curl()
-oidc = curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
-is_token_valid = False
+
+# curl = my_Curl()
+# oidc = curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
+# is_token_valid = False
 
 @app.callback(
-	Output("task-submit-button", "disabled"),
-	Output('oidc-auth-window', 'hidden'),
-	Output('oidc-auth-window', 'href'),
+	Output("submission-status-alert", "is_open"),
 	Input("task-submit-button", "n_clicks"),
+	State('search-space-storage', 'data'),
+	State('task-configuration-storage','data'),
+	State('local-storage', 'data'),
+	State('additional-file-storage', 'data'),
 	prevent_initial_call=True)
-def submit(signal):
-	print('submit')
+def submit(signal, search_space, task_config, token_data, file_location):
+	if file_location.get('tmp_file_location') is None:
+		file_location['tmp_file_location']=f'tmp/{uuid.uuid4()}'
+	tmp_dir = file_location.get('tmp_file_location')
+	os.makedirs(tmp_dir, exist_ok=True)
+	uid = tmp_dir.split('/')[-1]
+	token_file = f'.token-{uid}'
+	token_dir = os.environ['PANDA_CONFIG_ROOT']
+	token_dir = os.path.expanduser(token_dir)
+	with open(os.path.join(token_dir, '.token'), 'w') as f:
+		print(f'dumping new token at {os.path.join(token_dir, token_file)}')
+		token=json.dumps(token_data)
+		f.write(token)
+	job_config = JobConfig()
+	job_config.parse(task_config)
+	ss = SearchSpace()
+	ss.parse_from_memory(search_space)
+	task=Phpo(job_config=job_config, id_token=token_data['id_token'], verbose=True, tmp_dir=tmp_dir, token_file=token_file)
+	task.HyperParameters = ss.search_space_objects
+	task.submit()	
+	return True
 	# proc = (task.submit(verbose=True, files_from='demo/quick_submit'))
 	# tmp_dir = f'./tmp/{uuid.uuid4()}'
 
-	global curl
-	global oidc
-	global is_token_valid
-	global authorization_output
+# 	global curl
+# 	global oidc
+# 	global is_token_valid
+# 	global authorization_output
 
-	status, authorization_output, is_token_valid = oidc.my_run_device_authorization_flow()
-	print(status, authorization_output, is_token_valid)
-	if isinstance(authorization_output, dict) and 'verification_uri_complete' in authorization_output:
-		return True, False, authorization_output['verification_uri_complete']
-	else:
-		return True, True, '#'
+# 	status, authorization_output, is_token_valid = oidc.my_run_device_authorization_flow()
+# 	print(status, authorization_output, is_token_valid)
+# 	if isinstance(authorization_output, dict) and 'verification_uri_complete' in authorization_output:
+# 		return True, False, authorization_output['verification_uri_complete']
+# 	else:
+# 		return True, True, '#'
 
-@app.callback(
-	Output('task-submit-continue-after-auth-button', 'disabled'),
-	Input("task-submit-continue-after-auth-button", "n_clicks"),
-	prevent_initial_call=True
-)
-def continue_auth(signal):
-	global authorization_output
-	global oidc 
-	global is_token_valid
-	try:
-		print('Getting id token')
-		s, o = oidc.get_id_token(authorization_output['token_endpoint'], authorization_output['client_id'], authorization_output['client_secret'], authorization_output['device_code'], authorization_output['interval'], authorization_output['expires_in'])
-		print(s,o)
-	except:
-		print("Unable to get id token")
-	print("Does token exist?", os.path.exists(oidc.get_token_path()))
-	s, id, _ = oidc.check_token()
-	print(s, id, _)
-	# from pandaclient import Client
-	# local_curl = Client._Curl()
-	# local_oidc = local_curl.get_oidc(PLogger.getPandaLogger())
-	# print(local_oidc.get_token_path())
-	# print("Is token exist?", os.path.exists(local_oidc.get_token_path()))
-	# print(local_oidc.check_token())
-	if s:
-		task.submit(verbose=True, files_from='demo/quick_submit')
-	else:
-		print("Invalid Id Token, not submitting")
-	return True
+# @app.callback(
+# 	Output('task-submit-continue-after-auth-button', 'disabled'),
+# 	Input("task-submit-continue-after-auth-button", "n_clicks"),
+# 	prevent_initial_call=True
+# )
+# def continue_auth(signal):
+# 	global authorization_output
+# 	global oidc 
+# 	global is_token_valid
+# 	try:
+# 		print('Getting id token')
+# 		s, o = oidc.get_id_token(authorization_output['token_endpoint'], authorization_output['client_id'], authorization_output['client_secret'], authorization_output['device_code'], authorization_output['interval'], authorization_output['expires_in'])
+# 		print(s,o)
+# 	except:
+# 		print("Unable to get id token")
+# 	print("Does token exist?", os.path.exists(oidc.get_token_path()))
+# 	s, id, _ = oidc.check_token()
+# 	print(s, id, _)
+# 	# from pandaclient import Client
+# 	# local_curl = Client._Curl()
+# 	# local_oidc = local_curl.get_oidc(PLogger.getPandaLogger())
+# 	# print(local_oidc.get_token_path())
+# 	# print("Is token exist?", os.path.exists(local_oidc.get_token_path()))
+# 	# print(local_oidc.check_token())
+# 	if s:
+# 		task.submit(verbose=True, files_from='demo/quick_submit')
+# 	else:
+# 		print("Invalid Id Token, not submitting")
+# 	return True
 
 if __name__ == '__main__':
 	app.run_server(debug=True)

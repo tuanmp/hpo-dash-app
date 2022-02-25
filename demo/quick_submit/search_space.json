@@ -1,6 +1,6 @@
 {
     "x" : {
-        "method": "uniformint",
+        "method": "uniform",
         "dimension": {
             "low": 0,
             "high": 5
@@ -8,7 +8,7 @@
     },
 
     "y": {
-        "method": "uniformint",
+        "method": "uniform",
         "dimension": {
             "low": 0,
             "high": 5

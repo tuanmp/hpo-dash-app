@@ -60,12 +60,15 @@ def header(app_title="PANDA Hyperparameter Optimization"):
             ),
             dbc.Offcanvas(
                 children=[
-                    dbc.Button("Sign in with CERN SSO", color='success', href="#", target="_blank", id="authentication-button")
+                    html.P(id="authentication-message"),
+                    html.Div(dbc.Button("Sign in with CERN SSO", color='success', href="#", target="_blank", id="authentication-button"), hidden=True, id="signin-button-container"),
+                    html.Div(dbc.Button("Sign out", color='danger', id="signout-button"), hidden=True, id='signout-button-container')
                 ],
                 is_open=False,
                 id="authentication-button-container", 
                 keyboard=True,
                 placement="end",
+                title=""
             ),
             dcc.Store(storage_type='session', id='session-storage', data={})
         ],

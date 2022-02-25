@@ -5,8 +5,22 @@ import sys
 from configparser import ConfigParser
 from dash import html
 import dash_bootstrap_components as dbc
-from pandaclient.Client import _Curl
+from pandaclient.Client import _Curl, _x509_CApath, _getGridSrc
 from pandaclient.openidc_utils import OpenIdConnect_Utils
+from pandaclient import MiscUtils, PLogger
+from pandaclient.MiscUtils import commands_get_status_output, commands_get_output, pickle_loads
+import socket
+import random
+import tempfile
+import os
+import re
+import sys
+import ssl
+import stat
+import json
+import gzip
+import string
+import traceback
 
 # import sys
 import ssl
@@ -88,6 +102,13 @@ def splitCommaSepInput(input):
         raise TypeError("Input must be a string")
     return re.split(",", re.sub("\s", input))
 
+def dump_log(func_name, exception_obj, output):
+    print(traceback.format_exc())
+    print(output)
+    err_str = "{} failed : {}".format(func_name, str(exception_obj))
+    tmp_log = PLogger.getPandaLogger()
+    tmp_log.error(err_str)
+    return err_str
 
 full_width_style = {'width': '100%'}
 info_button_style = {'font-size': '11px', 'font-weight': 'bold', 'height': '20px', 'padding': '0 6px'}
@@ -98,10 +119,18 @@ def info_button(**kwargs):
 def label_with_info_button(label, **kwargs):
 	return html.Div(
 		[
-			label,
-			info_button(**kwargs)
+			html.P(label, style={'margin-top': "1rem"}),
+			# info_button(**kwargs)
 		]
 	)
+
+def str_decode(data):
+    if hasattr(data, 'decode'):
+        try:
+            return data.decode()
+        except Exception:
+            return data.decode('utf-8')
+    return data
 
 def get_index(container):
     index=0
@@ -139,16 +168,25 @@ def decode_id_token(id_token):
     except Exception as e:
         print(e)
         return None
-        
+
+# def _x509_CApath():
+#     if 'X509_CERT_DIR' not in os.environ or os.environ['X509_CERT_DIR'] == '':
+#         com = "{0} echo $X509_CERT_DIR".format(_getGridSrc())
+#         output = commands_get_output(com)
+#         output = output.split('\n')[-1]
+#         if output == '':
+#             output = '/etc/grid-security/certificates'
+#         os.environ['X509_CERT_DIR'] = output
+#     return os.environ['X509_CERT_DIR']
 
 class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
     def __init__(self, auth_config_url, token_dir=None, log_stream=None, verbose=False):
         self.auth_config_url = auth_config_url
-        if token_dir is None:
-            token_dir = os.environ['PANDA_CONFIG_ROOT']
-        self.token_dir = os.path.expanduser(token_dir)
-        if not os.path.exists(self.token_dir):
-            os.makedirs(self.token_dir, exist_ok=True)
+        # if token_dir is None:
+        #     token_dir = os.environ['PANDA_CONFIG_ROOT']
+        # self.token_dir = os.path.expanduser(token_dir)
+        # if not os.path.exists(self.token_dir):
+        #     os.makedirs(self.token_dir, exist_ok=True)
         self.log_stream = log_stream
         self.verbose = verbose
 
@@ -181,15 +219,7 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
         return False, {}, None
       
     def fetch_page(self, url):
-        # path = os.path.join(self.token_dir, CACHE_PREFIX + str(uuid.uuid5(uuid.NAMESPACE_URL, str(url))))
-        # if os.path.exists(path) and \
-        #         datetime.datetime.now() - datetime.datetime.fromtimestamp(os.path.getmtime(path)) < \
-        #         datetime.timedelta(hours=1):
-        #     try:
-        #         with open(path) as f:
-        #             return True, json.load(f)
-        #     except Exception as e:
-        #         self.log_stream.debug('cached {0} is corrupted: {1}'.format(os.path.basename(url), str(e)))
+
         if self.verbose:
             self.log_stream.debug('fetching {0}'.format(url))
         try:
@@ -222,15 +252,11 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
             text = conn.read()
             if self.verbose:
                 self.log_stream.debug(text)
-            # id_token = json.loads(text)['id_token']
-            # with open(self.get_token_path(), 'w') as f:
-            #     f.write(text)
             return True, json.loads(text)
         except HTTPError as e:
             return False, 'code={0}. reason={1}. description={2}'.format(e.code, e.reason, e.read())
         except Exception as e:
             return False, str(e)
-
 
     def run_device_authorization_flow(self, data):
         self.log_stream.info('Getting custom token id')
@@ -351,9 +377,57 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
             except Exception as e:
                 return False, str(e)
 
-class my_Curl(_Curl):
-    def __init__(self):
+
+class modified_OpenIdConnect_Utils(OpenIdConnect_Utils):
+    def __init__(self, auth_config_url, token_dir=None, log_stream=None, verbose=False, token_file='.token'):
+        self.auth_config_url = auth_config_url
+        if token_dir is None:
+            token_dir = os.environ['PANDA_CONFIG_ROOT']
+        self.token_dir = os.path.expanduser(token_dir)
+        if not os.path.exists(self.token_dir):
+            os.makedirs(self.token_dir, exist_ok=True)
+        print(self.token_dir)
+        self.log_stream = log_stream
+        self.verbose = verbose
+        self.token_file = token_file
+
+    def get_token_path(self):
+        print(f"token path: {os.path.join(self.token_dir, self.token_file)}")
+        return os.path.join(self.token_dir, self.token_file)
+
+
+class modified_Curl(_Curl):
+    def __init__(self, token_file):
         super().__init__()
+        self.token_file=token_file
+        print(self.token_file)
+    
+    def get_oidc(self, tmp_log):
+        parsed = urlparse(baseURLSSL)
+        if parsed.port:
+            auth_url = '{0}://{1}:{2}/auth/{3}_auth_config.json'.format(parsed.scheme, parsed.hostname, parsed.port,
+                                                                        self.authVO)
+        else:
+            auth_url = '{0}://{1}/auth/{3}_auth_config.json'.format(parsed.scheme, parsed.hostname, parsed.port,
+                                                                    self.authVO)
+        oidc = modified_OpenIdConnect_Utils(auth_url, log_stream=tmp_log, verbose=self.verbose, token_file=self.token_file)
+        return oidc
+
+    # get ID token
+    def get_id_token(self):
+        tmp_log = PLogger.getPandaLogger()
+        oidc = self.get_oidc(tmp_log)
+        s, o = oidc.run_device_authorization_flow()
+        if not s:
+            tmp_log.error(o)
+            sys.exit(EC_Failed)
+        self.idToken = o
+        return True
+
+class my_Curl(_Curl):
+    def __init__(self, id_token=""):
+        super().__init__()
+        self.id_token=id_token
 
     def get_oidc(self, tmp_log, verbose=False):
         parsed = urlparse(baseURLSSL)
@@ -366,28 +440,137 @@ class my_Curl(_Curl):
         oidc = my_OpenIdConnect_Utils(auth_url, log_stream=tmp_log, verbose=verbose)
         return oidc
 
-    
+    # def get_id_token(self):
+    #     tmp_log = PLogger.getPandaLogger()
+    #     oidc = self.get_oidc(tmp_log)
+    #     s, o = oidc.run_device_authorization_flow()
+    #     if not s:
+    #         tmp_log.error(o)
+    #         sys.exit(EC_Failed)
+    #     self.idToken = o
+    #     return True
 
-# def copy_panda_cfg():
-#     pandaPath = os.path.join(os.environ["HOME"], ".panda")
-#     if not os.path.isdir(pandaPath):
-#         os.makedirs(pandaPath)
-#     if not os.path.isfile(os.path.join(pandaPath, "panda_setup.cfg")):
-#         dst = os.path.join(pandaPath, "panda_setup.cfg")
-#         if 'eos/user/' in os.environ.get('HOME'):
-#             src = os.path.join(os.environ.get('HOME'),
-#                                '.local/etc/panda/panda_setup.example.cfg')
-#         else:
-#             src = f"{sys.exec_prefix}/etc/panda/panda_setup.example.cfg"
-#         config = ConfigParser()
-#         config.read(src)
-#         config.set(section='main', option='PANDA_AUTH',
-#                    value='x509_no_grid')
-#         config.set(section='main',
-#                    option='panda_use_native_httplib', value='1')
-#         with open(dst, 'w') as f:
-#             config.write(f)
-#     return
+    def post(self,url,data,rucioAccount=False, is_json=False, via_file=False, compress_body=False):
+        # make command
+        com = '%s --silent' % self.path
+        if not self.verifyHost or not url.startswith('https://'):
+            com += ' --insecure'
+        else:
+            tmp_x509_CApath = _x509_CApath()
+            if tmp_x509_CApath != '':
+                com += ' --capath %s' % tmp_x509_CApath
+        if self.compress:
+            com += ' --compressed'
+        if self.authMode == 'oidc':
+            com += ' -H "Authorization: Bearer {0}"'.format(self.id_token)
+            com += ' -H "Origin: {0}"'.format(self.authVO)
+        else:
+            if self.sslCert != '':
+                com += ' --cert %s' % self.sslCert
+                com += ' --cacert %s' % self.sslCert
+            if self.sslKey != '':
+                com += ' --key %s' % self.sslKey
+        if compress_body:
+            com += ' -H "Content-Type: application/json"'
+        # max time of 10 min
+        com += ' -m 600'
+        # add rucio account info
+        # if rucioAccount:
+        #     if 'RUCIO_ACCOUNT' in os.environ:
+        #         data['account'] = os.environ['RUCIO_ACCOUNT']
+        #     if 'RUCIO_APPID' in os.environ:
+        #         data['appid'] = os.environ['RUCIO_APPID']
+        #     data['client_version'] = '2.4.1'
+        # write data to temporary config file
+        # if globalTmpDir != '':
+        #     tmpFD, tmpName = tempfile.mkstemp(dir=globalTmpDir)
+        # else:
+        tmpFD, tmpName = tempfile.mkstemp()
+        # data
+        strData = ''
+        if not compress_body:
+            for key in data.keys():
+                strData += 'data="%s"\n' % urlencode({key:data[key]})
+            os.write(tmpFD, strData.encode('utf-8'))
+        else:
+            f = os.fdopen(tmpFD, "wb")
+            with gzip.GzipFile(fileobj=f) as f_gzip:
+                f_gzip.write(json.dumps(data).encode())
+            f.close()
+        try:
+            os.close(tmpFD)
+        except Exception:
+            pass
+        tmpNameOut = '{0}.out'.format(tmpName)
+        if not compress_body:
+            com += ' --config %s' % tmpName
+        else:
+            com += ' --data-binary @{}'.format(tmpName)
+        if via_file:
+            com += ' -o {0}'.format(tmpNameOut)
+        com += ' %s' % self.randomize_ip(url)
+        # execute
+        if self.verbose:
+            print(com)
+            for key in data:
+                print('{}={}'.format(key, data[key]))
+        s,o = commands_get_status_output(com)
+        if o != '\x00':
+            try:
+                if is_json:
+                    o = json.loads(o)
+                else:
+                    tmpout = unquote_plus(o)
+                    o = eval(tmpout)
+            except Exception:
+                pass
+        if via_file:
+            with open(tmpNameOut, 'rb') as f:
+                ret = (s, f.read())
+            os.remove(tmpNameOut)
+        else:
+            ret = (s, o)
+        # remove temporary file
+        os.remove(tmpName)
+        ret = self.convRet(ret)
+        if self.verbose:
+            print(ret)
+        return ret
+
+    def put(self,url,data):
+        # make command
+        com = '%s --silent' % self.path
+        if not self.verifyHost or not url.startswith('https://'):
+            com += ' --insecure'
+        else:
+            tmp_x509_CApath = _x509_CApath()
+            if tmp_x509_CApath != '':
+                com += ' --capath %s' % tmp_x509_CApath
+        if self.compress:
+            com += ' --compressed'
+        if self.authMode == 'oidc':
+            com += ' -H "Authorization: Bearer {0}"'.format(self.id_token)
+            com += ' -H "Origin: {0}"'.format(self.authVO)
+        else:
+            if self.sslCert != '':
+                com += ' --cert %s' % self.sslCert
+                com += ' --cacert %s' % self.sslCert
+            if self.sslKey != '':
+                com += ' --key %s' % self.sslKey
+        # emulate PUT
+        for key in data.keys():
+            com += ' -F "%s=@%s"' % (key,data[key])
+        com += ' %s' % self.randomize_ip(url)
+        if self.verbose:
+            print(com)
+        # execute
+        ret = commands_get_status_output(com)
+        ret = self.convRet(ret)
+        if self.verbose:
+            print(ret)
+        return ret
+
+
 
 
 # def get_panda_config(config_path=None):

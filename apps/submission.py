@@ -287,7 +287,7 @@ def submission(**kwargs):
 
 	help_button_style = {
 		'position': 'fixed',
-		'top': '35px',
+		'bottom': '35px',
 		'right': '35px'
 	}
 

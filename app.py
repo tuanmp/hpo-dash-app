@@ -52,8 +52,8 @@ application = app.server
 
 app.layout = html.Div(
 	[
-		dcc.Location(id='url', refresh=False),
-		dcc.Store(id='local-storage', storage_type='local', data=dev_token),
+		dcc.Location(id='url', refresh=True),
+		dcc.Loading(dcc.Store(id='local-storage', storage_type='local', data=dev_token), fullscreen=True),
 		html.Link(href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.0.3/css/font-awesome.css", rel="stylesheet"),
 		# html.Link(href="https://codepen.io/rmarren1/pen/mLqGRg.css", rel="stylesheet"),
 		header(),
@@ -127,15 +127,15 @@ def navigate(hash, pathname, data):
 		label = dec['preferred_username']
 	except:
 		label = 'Sign in'
-	if pathname=='/home':
-		return homepage(), label
-	elif pathname=='/submission':
+	if pathname=='/submission':
 		return submission(), label
+	elif pathname=='/home':
+		return homepage(), label
 	elif pathname=='/monitor':
 		return monitor(), label
-	elif pathname=='/develop':
-		return develop(uid), label
-	return homepage(), label
+	# elif pathname=='/develop':
+	# 	return develop(uid), label
+	return submission(), label
 
 @app.callback(
 	Output("authentication-button-container", "is_open"),
@@ -154,7 +154,7 @@ def navigate(hash, pathname, data):
 def toggle_authentication_button(signal, signout_signal, is_open, data):
 	trigger = callback_context.triggered[0]['prop_id']
 	if 'signout-button' in trigger:
-		return False, "", "", True, True, {"token_valid": False, "refreshing": False, 'authenticating': False, 'signout': True}, '#'
+		return False, "", ["", dcc.Location(href='/home', id='extra-location')], True, True, {"token_valid": False, "refreshing": False, 'authenticating': False, 'signout': True}, '#'
 	if is_open:
 		raise PreventUpdate()
 	curl = my_Curl()
@@ -175,6 +175,7 @@ def toggle_authentication_button(signal, signout_signal, is_open, data):
 
 @app.callback(
 	Output('local-storage', 'data'),
+	# Output('storage-container', 'children'),
 	Input("session-storage", 'data'),
 	Input('authentication-button', 'n_clicks'),
 	prevent_initial_call=True
@@ -608,10 +609,6 @@ def check_task(n, search_space, task_config, token_data):
 	return False, "Task ready to submit", "Click on Submit button to submit task", True
 
 
-# curl = my_Curl()
-# oidc = curl.get_oidc(PLogger.getPandaLogger(), verbose=True)
-# is_token_valid = False
-
 @app.callback(
 	Output("submission-status-alert", "is_open"),
 	Input("task-submit-button", "n_clicks"),
@@ -643,50 +640,14 @@ def submit(signal, search_space, task_config, token_data, file_location):
 	task.HyperParameters = ss.search_space_objects
 	task.submit()	
 	return True
-	# proc = (task.submit(verbose=True, files_from='demo/quick_submit'))
-	# tmp_dir = f'./tmp/{uuid.uuid4()}'
 
-# 	global curl
-# 	global oidc
-# 	global is_token_valid
-# 	global authorization_output
-
-# 	status, authorization_output, is_token_valid = oidc.my_run_device_authorization_flow()
-# 	print(status, authorization_output, is_token_valid)
-# 	if isinstance(authorization_output, dict) and 'verification_uri_complete' in authorization_output:
-# 		return True, False, authorization_output['verification_uri_complete']
-# 	else:
-# 		return True, True, '#'
-
-# @app.callback(
-# 	Output('task-submit-continue-after-auth-button', 'disabled'),
-# 	Input("task-submit-continue-after-auth-button", "n_clicks"),
-# 	prevent_initial_call=True
-# )
-# def continue_auth(signal):
-# 	global authorization_output
-# 	global oidc 
-# 	global is_token_valid
-# 	try:
-# 		print('Getting id token')
-# 		s, o = oidc.get_id_token(authorization_output['token_endpoint'], authorization_output['client_id'], authorization_output['client_secret'], authorization_output['device_code'], authorization_output['interval'], authorization_output['expires_in'])
-# 		print(s,o)
-# 	except:
-# 		print("Unable to get id token")
-# 	print("Does token exist?", os.path.exists(oidc.get_token_path()))
-# 	s, id, _ = oidc.check_token()
-# 	print(s, id, _)
-# 	# from pandaclient import Client
-# 	# local_curl = Client._Curl()
-# 	# local_oidc = local_curl.get_oidc(PLogger.getPandaLogger())
-# 	# print(local_oidc.get_token_path())
-# 	# print("Is token exist?", os.path.exists(local_oidc.get_token_path()))
-# 	# print(local_oidc.check_token())
-# 	if s:
-# 		task.submit(verbose=True, files_from='demo/quick_submit')
-# 	else:
-# 		print("Invalid Id Token, not submitting")
-# 	return True
+@app.callback(
+	Output({'type': 'help-panel', 'index': MATCH}, 'is_open'),
+	Input({'type': 'help-button', 'index': MATCH}, 'n_clicks'),
+	prevent_initial_call=True
+)
+def open_help_panel(signal):
+	return True
 
 if __name__ == '__main__':
 	app.run_server(debug=True)

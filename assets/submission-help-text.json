@@ -1,0 +1,7 @@
+{
+    "1": [
+        "Upload predefined configuration files and additional files to run you task",
+        "If you have a predefined search space file, upload it by selecting or dropping the file on the top panel. HPOGUI will parse the hyperparameters into the search space for you.",
+        "A predefined configuration file can also "
+    ]
+}

@@ -15,7 +15,7 @@ def header(app_title="PANDA Hyperparameter Optimization"):
                                 ]
                             )
                         ],
-                        href='/home'
+                        href='/submission'
                     ),
                 ]
             ),
@@ -38,14 +38,14 @@ def header(app_title="PANDA Hyperparameter Optimization"):
                         ),
                         className='nav-item'
                     ),
-                    html.Li(
-                        html.A(
-                            "Development",
-                            href='/develop',
-                            className="nav-link"
-                        ),
-                        className='nav-item'
-                    ),
+                    # html.Li(
+                    #     html.A(
+                    #         "Development",
+                    #         href='/develop',
+                    #         className="nav-link"
+                    #     ),
+                    #     className='nav-item'
+                    # ),
                     html.Li(
                         html.A(
                             "Login",
@@ -58,9 +58,9 @@ def header(app_title="PANDA Hyperparameter Optimization"):
                 ],
                 className='navbar-nav'
             ),
-            dbc.Offcanvas(
+            dcc.Loading(dbc.Offcanvas(
                 children=[
-                    html.P(id="authentication-message"),
+                    dcc.Loading(children=[html.P(id="authentication-message")]),
                     html.Div(dbc.Button("Sign in with CERN SSO", color='success', href="#", target="_blank", id="authentication-button"), hidden=True, id="signin-button-container"),
                     html.Div(dbc.Button("Sign out", color='danger', id="signout-button"), hidden=True, id='signout-button-container')
                 ],
@@ -69,8 +69,8 @@ def header(app_title="PANDA Hyperparameter Optimization"):
                 keyboard=True,
                 placement="end",
                 title=""
-            ),
-            dcc.Store(storage_type='session', id='session-storage', data={})
+            ), fullscreen=True),
+            dcc.Loading(dcc.Store(storage_type='session', id='session-storage', data={}), fullscreen=True)
         ],
         dark=True,
         light=False,

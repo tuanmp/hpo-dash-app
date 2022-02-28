@@ -1,0 +1,33 @@
+{
+    "learning_rate" : {
+        "method": "categorical",
+        "dimension": {
+            "categories": ["0.001", "0.005", "0.01", "0.05", "0.1"]
+        }
+    },
+
+    "epochs": {
+        "method": "uniform",
+        "dimension": {
+            "low": 5,
+            "high": 30
+        }
+    }, 
+
+    "log2_batch_size": {
+        "method": "uniform",
+        "dimension": {
+            "low": 5,
+            "high": 10
+        }
+    },
+
+    "log10_momentum": {
+        "method": "uniform",
+        "dimension": {
+            "low": 0.7,
+            "high": 2
+        }
+    }
+    
+}

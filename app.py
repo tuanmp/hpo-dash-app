@@ -638,7 +638,7 @@ def submit(signal, search_space, task_config, token_data, file_location):
 	ss.parse_from_memory(search_space)
 	task=Phpo(job_config=job_config, id_token=token_data['id_token'], verbose=True, tmp_dir=tmp_dir, token_file=token_file)
 	task.HyperParameters = ss.search_space_objects
-	cu_dir = os.cwd()
+	cu_dir = os.getcwd()
 	os.chdir(tmp_dir)
 	with open("config.json", 'w') as f:
 		json.dump(job_config.config, f)

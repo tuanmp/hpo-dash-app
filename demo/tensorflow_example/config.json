@@ -1,0 +1,10 @@
+{
+    "evaluationExec": "sh /ATLASMLHPO/train_script/exec_in_container.sh", 
+    "evaluationContainer": "docker://gitlab-registry.cern.ch/tupham/traffic-sign-cnn:traffic-sign-cnn", 
+    "evaluationMetrics": "metrics.tgz", 
+    "evaluationOutput": "output.json",
+    "searchAlgorithm": "nevergrad",
+    "nParallelEvaluation": 2,
+    "site": "ANALY_CERN-PTEST",
+    "steeringExec": "run --rm -v \"$(pwd)\":/HPOiDDS gitlab-registry.cern.ch/zhangruihpc/steeringcontainer:0.0.4 /bin/bash -c \"hpogrid generate --n_point=%NUM_POINTS --max_point=%MAX_POINTS --infile=/HPOiDDS/%IN  --outfile=/HPOiDDS/%OUT -l nevergrad\""
+}

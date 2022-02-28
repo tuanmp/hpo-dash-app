@@ -171,8 +171,8 @@ class Phpo:
 			tmpOut = MiscUtils.commands_get_output('tar tvfz {0}'.format(archiveFullName))
 			print(tmpOut + '\n')
 			tmpLog.debug("=== uploading sandbox===")
-		# os.chdir(tmpDir)
-		status, out = self.putFile(archiveName, verbose)
+		# os.chdir(tmpDir)s
+		status, out = Client.putFile(archiveName, verbose)
 		os.chdir(curDir)
 		if out.startswith('NewFileName:'):
 			# found the same input sandbox to reuse

@@ -467,22 +467,32 @@ def submission(**kwargs):
 					dbc.CardBody(
 						[
 							html.H3('File Download'),
-							dcc.Dropdown(
-								id='download-dropdown',
-								options=[
-									{'label': 'search_space.json', 'value': 'search_space'},
-									{'label': 'config.json', 'value': 'configuration'}
-								],
-								value=['search_space', 'configuration'],
-								multi=True
+							dbc.Row(
+								[
+									dbc.Col(
+										dcc.Dropdown(
+											id='download-dropdown',
+											options=[
+												{'label': 'search_space.json', 'value': 'search_space'},
+												{'label': 'config.json', 'value': 'configuration'}
+											],
+											value=['search_space', 'configuration'],
+											multi=True
+										),
+										width=10
+									),
+									dbc.Col(
+										dbc.Button('Download', color='success', outline=True, id='download-button', size='md'),
+										width=2
+									)
+								]
 							),
-							dbc.Button('Download', color='success', outline=True, id='download-button'),
 							dcc.Download(id='download-search-space'),
 							dcc.Download(id='download-config')
 						]
 					)
 				)
-			)
+			),
 		]
 	)
 	

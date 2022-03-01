@@ -3,6 +3,7 @@ import json
 
 import yaml
 import uuid
+import re
 from pandaclient import MiscUtils, PsubUtils
 
 siteOptions = ['ANALY_BNL_GPU_ARC', 'ANALY_OU_OSCER_GPU_TEST', 'ANALY_QMUL_GPU_TEST',
@@ -220,6 +221,14 @@ class JobConfig:
     @property
     def steeringExec(self):
         return steeringExecTemplate.replace("#STEERINGCONTAINER", self.steeringContainer).replace("#METHOD", self.searchAlgorithm)
+    @steeringExec.setter
+    def steeringExec(self, val):
+        if not isinstance(val, str):
+            return
+        method = re.findall('-l (\w+)', val)
+        if len(method) > 0 and method[0] in searchAlgorithmOptions:
+            self.searchAlgorithm = method[0]
+        
 
     @property
     def evaluationContainer(self):

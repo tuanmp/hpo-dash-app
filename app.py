@@ -567,10 +567,16 @@ def upload_additional_file(contents, filename, data):
 	Output('download-config', 'data'),
 	Input('download-button', 'n_clicks'),
 	State('download-dropdown', "value"),
+	State('task-configuration-storage','data'),
+	State('search-space-storage', 'data'),
 	prevent_initial_call=True
 )
-def download(n, files):
-	return {'content': json.dumps(task.SearchSpace), 'filename': 'search_space.json'} if ('search_space' in files and len(search_space)>0) else None, {'content': job_config.to_json(), 'filename': 'config.json'} if 'configuration' in files else None, 
+def download(n, files, task_config, search_space):
+	job_config = JobConfig()
+	job_config.parse(task_config)
+	ss = SearchSpace()
+	ss.parse_from_memory(search_space)
+	return {'content': json.dumps(ss.json_search_space), 'filename': 'search_space.json'} if ('search_space' in files and len(search_space)>0) else None, {'content': json.dumps(job_config.config), 'filename': 'config.json'} if 'configuration' in files else None, 
 
 @app.callback(
 	Output('task-submit-button-container', 'hidden'),

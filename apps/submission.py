@@ -812,11 +812,6 @@ def submission(**kwargs):
 	submission = dbc.Container(
 		children=[
 			tabs,
-			
-			# result,
-			# detail,
-			# alert_job_detail,
-			# alert_taskID_search
 		],
 		style={'padding': '30px 20px'}
 	)

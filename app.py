@@ -27,6 +27,7 @@ import json, yaml, base64, datetime
 import re
 import uuid 
 from pandaclient import PLogger
+from pandaclient.panda_api import get_api
 # from queue import Queue, Empty
 # from threading import Thread
 
@@ -53,9 +54,11 @@ application = app.server
 app.layout = html.Div(
 	[
 		dcc.Location(id='url', refresh=True),
-		dcc.Loading(dcc.Store(id='local-storage', storage_type='local', data=dev_token), fullscreen=True),
+		dcc.Loading(dcc.Store(id='token-storage', storage_type='local', data=dev_token), fullscreen=True),
+		dcc.Interval(id='get-token-counter', interval=3000, disabled=True),
 		html.Link(href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.0.3/css/font-awesome.css", rel="stylesheet"),
 		# html.Link(href="https://codepen.io/rmarren1/pen/mLqGRg.css", rel="stylesheet"),
+		html.Div(id='navigation'),
 		header(),
 		html.Div(
 			id='app-page-content',
@@ -107,18 +110,10 @@ def add_search_space_element(name, value, current_search_space):
 @app.callback(
 	Output('app-page-content', 'children'),
 	Output('profile-button', 'children'),
-	# Output('profile-button', 'children'),
-	# Output('user-credentials', 'data'),
-	Input('url', 'hash'),
 	Input('url', 'pathname'),
-	# Input('user-credentials-container', 'children'),
-	# State('app-page-content', 'children'),
-	State('local-storage', 'data'),
-	# State('task-configuration-storage','data'),
-	# State('profile-button', 'label'),
-	# State('profile-button', 'children'),
+	State('token-storage', 'data'),
 )
-def navigate(hash, pathname, data):
+def navigate(pathname, data):
 
 	oidc = my_Curl().get_oidc(PLogger.getPandaLogger(), verbose=True)
 	status, token, dec = oidc.check_token(data)
@@ -130,11 +125,9 @@ def navigate(hash, pathname, data):
 	if pathname=='/submission':
 		return submission(), label
 	elif pathname=='/home':
-		return homepage(), label
+		return submission(), label
 	elif pathname=='/monitor':
 		return monitor(), label
-	# elif pathname=='/develop':
-	# 	return develop(uid), label
 	return submission(), label
 
 @app.callback(
@@ -148,7 +141,7 @@ def navigate(hash, pathname, data):
 	Input("profile-button", "n_clicks"),
 	Input('signout-button', 'n_clicks'),
 	State("authentication-button-container", "is_open"),
-	State('local-storage', 'data'),
+	State('token-storage', 'data'),
 	prevent_initial_call=True
 )
 def toggle_authentication_button(signal, signout_signal, is_open, data):
@@ -169,44 +162,57 @@ def toggle_authentication_button(signal, signout_signal, is_open, data):
 			return True,  "Valid ID token available", "No further action required.", True, False, {"token_valid": True, "refreshing": True, 'authenticating': False, "token": o}, '#'
 	s, o, _ = oidc.run_device_authorization_flow(data)
 	if s:
+		if 'expires_in' in o:
+			o['expires_at'] = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=o['expires_in'])
 		return True, "Valid ID token unavailable", "Following the following link to authenticate with PANDA server", False, True, {"token_valid": False, "refreshing": False, 'authenticating': True, "authentication_output": o}, o.get('verification_uri_complete', '#')
 	return True, "Valid ID token unavailable", "Sign out and reauthenticate", False, True, {"token_valid": False, "refreshing": False, 'authenticating': False, "authentication_output": o}, '#'
 
 
 @app.callback(
-	Output('local-storage', 'data'),
-	# Output('storage-container', 'children'),
+	Output('token-storage', 'data'),
+	Output('get-token-counter', 'disabled'),
+	Output('navigation', 'children'),
 	Input("session-storage", 'data'),
 	Input('authentication-button', 'n_clicks'),
+	Input('get-token-counter', "n_intervals"),
+	State('token-storage', 'data'),
+	State("authentication-button-container", "is_open"),
 	prevent_initial_call=True
 )
-def update_id_token(data, signal):
+def update_id_token(data, n_clicks, n_intervals, token_data, container_open):
 	trigger=callback_context.triggered[0]['prop_id']
 	if "session-storage" in trigger:
 		if data.get('signout')==True:
 			print('signin out')
-			return {}
+			return {}, True, []
 		if data['token_valid'] and data['refreshing']:
-			return data['token']
+			return data['token'], True, []
 		else:
-			raise PreventUpdate()
+			return token_data, True, []
 	elif data['authenticating']:
+		if not container_open:
+			return token_data, True, []
 		oidc=my_Curl().get_oidc(PLogger.getPandaLogger(), verbose=True)
 		authentication_output=data['authentication_output']
-		if not all( [key in authentication_output for key in ['token_endpoint', 'client_id', 'client_secret', 'device_code', 'expires_in']]):
-			raise PreventUpdate()
+		if not all( [key in authentication_output for key in ['token_endpoint', 'client_id', 'client_secret', 'device_code', 'expires_in', 'expires_at']]):
+			return token_data, True, []
+		expire_time = datetime.datetime.fromisoformat(authentication_output['expires_at'])
+		if datetime.datetime.now(datetime.timezone.utc) > expire_time:
+			return token_data, True, []
+		status, token_detail, dec = oidc.check_token(token_data)
+		if status:
+			return token_data, True, []
 		s, o = oidc.get_id_token(
 			authentication_output['token_endpoint'],
 			authentication_output['client_id'],
 			authentication_output['client_secret'],
 			authentication_output['device_code'],
-			5,
-			authentication_output['expires_in']
+			authentication_output['expires_at']
 		)
 		if not s:
-			raise PreventUpdate()
-		return o
-	raise PreventUpdate()
+			return token_data, False, []
+		return o, True, [dcc.Location(pathname='/submission', id='redirection')]
+	return token_data, True, []
 
 @app.callback(
 	Output("taskID-search-alert-header", "children"),
@@ -584,12 +590,16 @@ def download(n, files, task_config, search_space):
 	Output('task-submission-alert-body', 'children'),
 	Output('task-submission-alert', 'is_open'),
 	Input('task-verification', 'n_clicks'),
+	Input("submission-status-alert", "is_open"),
 	State('search-space-storage', 'data'),
 	State('task-configuration-storage','data'),
-	State('local-storage', 'data'),
+	State('token-storage', 'data'),
 	prevent_initial_call=True
 )
-def check_task(n, search_space, task_config, token_data):
+def check_task(n, status_alert_open, search_space, task_config, token_data):
+	trigger=callback_context.triggered[0]['prop_id']
+	if 'submission-status-alert' in trigger:
+		return False, "", "", False
 	oidc= my_Curl().get_oidc(PLogger.getPandaLogger(), verbose=True)
 	status, token_detail, dec = oidc.check_token(token_data)
 	if not status and token_detail.get('refresh_token') is not None:
@@ -617,10 +627,12 @@ def check_task(n, search_space, task_config, token_data):
 
 @app.callback(
 	Output("submission-status-alert", "is_open"),
+	Output('submission-status-alert-title', 'children'),
+	Output('submission-status-alert-body', 'children'),
 	Input("task-submit-button", "n_clicks"),
 	State('search-space-storage', 'data'),
 	State('task-configuration-storage','data'),
-	State('local-storage', 'data'),
+	State('token-storage', 'data'),
 	State('additional-file-storage', 'data'),
 	prevent_initial_call=True)
 def submit(signal, search_space, task_config, token_data, file_location):
@@ -628,8 +640,6 @@ def submit(signal, search_space, task_config, token_data, file_location):
 		file_location['tmp_file_location']=f'tmp/{uuid.uuid4()}'
 	tmp_dir = file_location.get('tmp_file_location')
 	os.makedirs(tmp_dir, exist_ok=True)
-	# uid = tmp_dir.split('/')[-1]
-	# token_file = f'.token-{uid}'
 	token_file='.token'
 	token_dir = os.environ['PANDA_CONFIG_ROOT']
 	token_dir = os.path.expanduser(token_dir)
@@ -642,19 +652,23 @@ def submit(signal, search_space, task_config, token_data, file_location):
 	job_config.parse(task_config)
 	ss = SearchSpace()
 	ss.parse_from_memory(search_space)
-	task=Phpo(job_config=job_config, id_token=token_data['id_token'], verbose=True, tmp_dir=tmp_dir, token_file=token_file)
-	task.HyperParameters = ss.search_space_objects
 	cu_dir = os.getcwd()
 	os.chdir(tmp_dir)
 	with open("config.json", 'w') as f:
 		json.dump(job_config.config, f)
 	with open('search_space.json', 'w') as f:
 		json.dump(ss.json_search_space, f)
-	cmd = 'phpo --loadJson config.json --searchSpaceFile search_space.json -v'
-	os.system(cmd)
-	os.chdir(cu_dir)
-	# task.submit()	
-	return True
+	api = get_api()
+	s,o = api.execute_phpo(['--loadJson', 'config.json', '--searchSpaceFile', 'search_space.json', '-v'])
+	print(s,o)
+	print("Deleting token")
+	os.remove(os.path.join(token_dir, '.token'))
+	if s:
+		taskID = o.get('jediTaskID')
+		alert_title, alert_body = "Task successfully submitted", f"Your JEDI task ID is {taskID}"
+	else:
+		alert_title, alert_body = "Task submission failed", f"Error message: {o.get('returnOut')}"
+	return True, alert_title, alert_body
 
 @app.callback(
 	Output({'type': 'help-panel', 'index': MATCH}, 'is_open'),

@@ -341,11 +341,10 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
                 return False, o
         return False, o              
 
-    def get_id_token(self, token_endpoint, client_id, client_secret, device_code, interval, expires_in):
+    def get_id_token(self, token_endpoint, client_id, client_secret, device_code, expires_at):
 
         if self.verbose:
             self.log_stream.debug('getting ID token')
-        startTime = datetime.datetime.utcnow()
         data = {'client_id': client_id,
                 'client_secret': client_secret,
                 'grant_type': 'urn:ietf:params:oauth:grant-type:device_code',
@@ -353,29 +352,20 @@ class my_OpenIdConnect_Utils(OpenIdConnect_Utils):
         rdata = urlencode(data).encode()
         req = Request(token_endpoint, rdata)
         req.add_header('content-type', 'application/x-www-form-urlencoded')
-        while datetime.datetime.utcnow() - startTime < datetime.timedelta(seconds=expires_in):
+        if datetime.datetime.now(datetime.timezone.utc) < datetime.datetime.fromisoformat(expires_at):
             try:
                 conn = urlopen(req)
                 text = conn.read().decode()
                 if self.verbose:
                     self.log_stream.info(text)
                 id_token = json.loads(text)['id_token']
-                # with open(self.get_token_path(), 'w') as f:
-                #     f.write(text)
                 return True, json.loads(text)
             except HTTPError as e:
                 text = e.read()
-                try:
-                    description = json.loads(text)
-                    # pending
-                    if description['error'] == "authorization_pending":
-                        time.sleep(interval + 1)
-                        continue
-                except Exception:
-                    pass
                 return False, 'code={0}. reason={1}. description={2}'.format(e.code, e.reason, text)
             except Exception as e:
                 return False, str(e)
+        return False, "authentication expired"
 
 
 class modified_OpenIdConnect_Utils(OpenIdConnect_Utils):
